@@ -1,13 +1,21 @@
 # 🗄️ Database
 
-## Tables
+## Các bảng
 
-students(id, name)
+### students
+- id
+- name
 
-embeddings(id, student_id, vector)
+### embeddings
+- id
+- student_id
+- vector (BLOB)
 
-attendance(id, student_id, timestamp)
+### attendance
+- id
+- student_id
+- timestamp
 
-## Notes
-- embedding lưu dạng BLOB
-- dùng pickle để serialize
+## Ghi chú
+- embedding lưu dưới dạng BLOB
+- sử dụng pickle để encode/decode

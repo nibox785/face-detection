@@ -1,8 +1,8 @@
-# 🔄 Workflow
+# 🔄 Luồng hoạt động hệ thống
 
-1. Capture image
-2. Detect face
-3. Extract embedding
-4. Compare DB
-5. Identify
-6. Mark attendance
+1. Camera chụp ảnh
+2. Phát hiện khuôn mặt
+3. Trích xuất embedding
+4. So sánh với database
+5. Nhận diện sinh viên
+6. Lưu điểm danh

@@ -1,11 +1,12 @@
 # 💻 Frontend
 
-## Features
-- Webcam capture
-- Display attendance list
+## Chức năng
+- Mở webcam
+- Gửi ảnh lên backend
+- Hiển thị kết quả nhận diện
 
-## Tech
-- HTML / CSS / JS
+## Công nghệ
+- HTML / CSS / JavaScript
 
-## Flow
-Camera → Capture → Send API → Show result
+## Luồng hoạt động
+Camera → Capture → Gửi API → Hiển thị kết quả

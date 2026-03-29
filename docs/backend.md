@@ -1,19 +1,20 @@
 # ⚙️ Backend
 
-## Framework
+## Công nghệ
 - FastAPI
 
-## API Endpoints
-- POST /register
-- POST /recognize
-- GET /attendance
+## Chức năng
+- Nhận request từ frontend
+- Gọi FaceService để xử lý AI
+- Trả kết quả nhận diện
 
-## Responsibilities
-- Handle request
-- Call FaceService
-- Return result
+## API chính
+- POST /register: đăng ký sinh viên
+- POST /recognize: nhận diện khuôn mặt
+- GET /attendance: lấy danh sách điểm danh
 
-## Structure
-- main.py
-- services/
-- database/
+## Cấu trúc
+- main.py: entry point
+- services/: xử lý logic
+- database/: kết nối DB
+- api/: định nghĩa route
