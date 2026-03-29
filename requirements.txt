@@ -5,3 +5,4 @@ numpy
 deepface
 mysql-connector-python
 python-multipart
+mtcnn

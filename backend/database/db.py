@@ -74,3 +74,4 @@ def check_attendance_today(student_id):
     conn.close()
 
     return count > 0
+
