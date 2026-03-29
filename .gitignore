@@ -9,7 +9,7 @@ __pycache__/
 venv/
 ENV/
 env/
-attendance/
+attendance.db
 
 # Django/Flask
 instance/
