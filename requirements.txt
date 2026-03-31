@@ -1,8 +1,12 @@
-fastapi
-uvicorn
-opencv-python
-numpy
-deepface
-mysql-connector-python
-python-multipart
-mtcnn
+fastapi==0.135.2
+uvicorn==0.42.0
+numpy==1.26.4
+opencv-python==4.8.1.78
+pydantic==2.12.5
+python-multipart==0.0.22
+mysql-connector-python==8.1.1  # nếu dùng MySQL
+deepface==0.0.99
+mtcnn==1.0.0
+tensorflow==2.11.0
+keras==2.11.0
+retina-face==0.0.17

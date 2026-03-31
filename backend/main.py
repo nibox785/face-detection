@@ -1,8 +1,9 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+import datetime
 
-from backend.api.routes import router, embeddings_cache
+from backend.api.routes import router
 from backend.database.models import init_db
 from backend.database.db import get_all_embeddings
 
@@ -12,6 +13,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("face-attendance")
+
+# ====================== GLOBAL CACHE ======================
+embeddings_cache: list = []
 
 # ====================== LIFESPAN ======================
 @asynccontextmanager
@@ -48,7 +52,8 @@ async def root():
     return {
         "message": "Face Attendance API is running",
         "version": "1.0.0",
-        "status": "healthy"
+        "status": "healthy",
+        "embeddings_count": len(embeddings_cache)
     }
 
 
@@ -56,5 +61,6 @@ async def root():
 async def health_check():
     return {
         "status": "healthy",
-        "embeddings_count": len(embeddings_cache)
+        "embeddings_count": len(embeddings_cache),
+        "timestamp": datetime.now().isoformat()
     }
