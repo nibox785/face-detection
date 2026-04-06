@@ -36,16 +36,19 @@ class AttendanceResponse(ApiResponse):
 
  # ====================== RECOGNIZE ======================
 class RecognizeResult(BaseModel):
-    student_id: Optional[int]
+    student_id: Optional[int] = None
     score: float
-
-class RecognizeResponse(BaseModel):
-    results: List[RecognizeResult]
-    message: Optional[str] = None
 
 class RecognizeResponse(ApiResponse):
     data: List[RecognizeResult]
 
-# ====================== REGISTER ======================
+# ====================== AUTH & REGISTER ======================
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class LoginResponse(ApiResponse):
+    data: Optional[Dict[str, Any]] = None
+
 class RegisterResponse(ApiResponse):
-    data: Optional[Dict[str, Any]] = None    
+    data: Optional[Dict[str, Any]] = None

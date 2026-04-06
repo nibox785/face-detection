@@ -1,6 +1,7 @@
 import sqlite3
 import pickle
 from datetime import datetime
+from typing import List, Optional, Dict, Any
 
 DB_PATH = "attendance.db"
 
@@ -18,7 +19,9 @@ def init_db():
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS students (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL
+        name TEXT NOT NULL,
+        mssv TEXT UNIQUE,                 
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """)
 
@@ -127,15 +130,13 @@ def get_all_students():
     return [{"id": row[0], "name": row[1]} for row in rows]
 
 
-def get_student_by_id(student_id: int):
+def get_student_by_id(student_id: int) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id, name FROM students WHERE id = ?", (student_id,))
     row = cursor.fetchone()
     conn.close()
-    if row:
-        return {"id": row[0], "name": row[1]}
-    return None
+    return {"id": row[0], "name": row[1]} if row else None
 
 
 def delete_student_and_embedding(student_id: int) -> bool:
@@ -154,10 +155,29 @@ def delete_student_and_embedding(student_id: int) -> bool:
     return True
 
 
+def get_student_by_name(name: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name FROM students WHERE name = ?", (name.strip(),))
+    row = cursor.fetchone()
+    conn.close()
+    return {"id": row[0], "name": row[1]} if row else None
+
+
+def create_student(name: str) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO students (name) VALUES (?)", (name.strip(),))
+    student_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return student_id
+
+
 # ===============================
 # ATTENDANCE - NÂNG CAO
 # ===============================
-def get_attendance_by_student(student_id: int):
+def get_attendance_by_student(student_id: int) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -172,7 +192,7 @@ def get_attendance_by_student(student_id: int):
     return [{"id": r[0], "name": r[1], "timestamp": r[2]} for r in rows]
 
 
-def get_attendance_range(start_date: str = None, end_date: str = None):
+def get_attendance_range(start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
     
