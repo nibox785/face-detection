@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.env
+.venv/
+venv/
+ENV/
+env/
+attendance.db
+
+# Django/Flask
+instance/
+.pytest_cache/
+
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+*.iml
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+
+# Logs
+*.log
+
+# local settings
+local_settings.py
+
+# test output
+.coverage
+htmlcov/
+coverage.xml
+
+# npm
+node_modules/
+
+# frontend build artifacts
+build/
+public/build/
+
+# environment files
+.env
+
+# other
+*.swp
+*~
