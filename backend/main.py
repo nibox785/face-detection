@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import datetime
 import os
 
-from backend.api.routes import router
 from backend.database.db import init_db, get_all_embeddings
+from backend.api.routes import router, update_embeddings_cache
 
 # ====================== LOGGING CONFIG ======================
 logging.basicConfig(
@@ -14,9 +14,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("face-attendance")
-
-# ====================== GLOBAL CACHE ======================
-embeddings_cache: list = []
 
 # ====================== LIFESPAN ======================
 @asynccontextmanager
@@ -27,11 +24,7 @@ async def lifespan(app: FastAPI):
     
     # Load embeddings cache
     logger.info("📥 Đang load embeddings từ database...")
-    global embeddings_cache
-    embeddings_cache.clear()
-    embeddings_cache.extend(get_all_embeddings())
-    
-    logger.info(f"✅ Đã load {len(embeddings_cache)} embeddings vào cache")
+    update_embeddings_cache()
     
     yield
     

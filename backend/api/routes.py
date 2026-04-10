@@ -23,6 +23,8 @@ from backend.database.db import (
     get_attendance_range,
     get_attendance_by_student,
     get_all_embeddings,
+    create_student,
+    save_embedding,
     DB_PATH
 )
 from backend.database.schemas import (
@@ -49,13 +51,20 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB max file size
 
 # ====================== SERVICES ======================
-face_service = FaceService(threshold=0.7)
+face_service = FaceService(threshold=0.01)
 attendance_service = AttendanceService()
 register_service = RegisterService()
 
 # ====================== CACHE ======================
+# Lưu embeddings cache (sẽ được cập nhật từ main.py)
 embeddings_cache: List[tuple] = []
 
+def update_embeddings_cache():
+    """Reload embeddings cache từ database"""
+    global embeddings_cache
+    embeddings_cache.clear()
+    embeddings_cache.extend(get_all_embeddings())
+    logger.info(f"📦 Đã update cache: {len(embeddings_cache)} embeddings")
 
 # ====================== HELPER FUNCTIONS ======================
 def validate_image_file(file: UploadFile, max_size: int = MAX_FILE_SIZE) -> bool:
@@ -179,9 +188,7 @@ async def register(
 
     if success:
         # Reload cache
-        global embeddings_cache
-        embeddings_cache.clear()
-        embeddings_cache.extend(get_all_embeddings())
+        update_embeddings_cache()
 
         return RegisterResponse(
             status="success",
@@ -243,9 +250,7 @@ async def register_dataset(
         save_dataset_image(name, file.filename or f"{name}.jpg", contents)
 
         # Reload cache
-        global embeddings_cache
-        embeddings_cache.clear()
-        embeddings_cache.extend(get_all_embeddings())
+        update_embeddings_cache()
 
         return RegisterResponse(
             status="success",
@@ -256,6 +261,103 @@ async def register_dataset(
         raise
     except Exception as e:
         logger.error(f"❌ Lỗi không xác định khi đăng ký '{name}': {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Lỗi server: {str(e)}")
+
+
+@router.post("/dataset/register-multiple", response_model=RegisterResponse)
+async def register_dataset_multiple(
+    name: str = Form(...),
+    mssv: Optional[str] = Form(None),
+    files: List[UploadFile] = File(...),
+    authorization: Optional[str] = Header(None)
+):
+    """Đăng ký + lưu múltiplos ảnh từ các góc khác nhau"""
+    try:
+        get_current_admin(authorization)
+
+        if not name or not name.strip():
+            raise HTTPException(status_code=400, detail="Tên sinh viên không được để trống")
+
+        if not files or len(files) == 0:
+            raise HTTPException(status_code=400, detail="Phải gửi ít nhất 1 ảnh")
+
+        logger.info(f"Dataset register múltiplo cho sinh viên: {name}, MSSV: {mssv}, Số ảnh: {len(files)}")
+
+        # Validate all files
+        for file in files:
+            validate_image_file(file)
+
+        # Validate MSSV nếu có
+        if mssv and mssv.strip():
+            mssv = mssv.strip()
+            existing_mssv = get_student_by_mssv(mssv)
+            if existing_mssv:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"MSSV '{mssv}' đã tồn tại với sinh viên: {existing_mssv['name']}"
+                )
+
+        # Kiểm tra sinh viên đã tồn tại chưa
+        existing = get_student_by_name(name)
+        if existing:
+            # Nếu đã tồn tại, chỉ lưu ảnh
+            for file in files:
+                contents = await file.read()
+                save_dataset_image(name, file.filename or f"{name}.jpg", contents)
+            return RegisterResponse(
+                status="success",
+                message=f"Sinh viên đã tồn tại. {len(files)} ảnh được lưu vào dataset",
+                data={"student_id": existing["id"], "name": name, "mssv": mssv}
+            )
+
+        # Đăng ký mới - xử lý tất cả ảnh
+        student_id = create_student(name, mssv)
+        embeddings_saved = 0
+
+        for file in files:
+            contents = await file.read()
+            
+            # Trích xuất embedding
+            np_arr = np.frombuffer(contents, np.uint8)
+            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            
+            if frame is None:
+                logger.warning(f"Không thể đọc file ảnh: {file.filename}")
+                continue
+
+            faces = face_service.detect(frame)
+            
+            if not faces:
+                logger.warning(f"Không phát hiện khuôn mặt trong {file.filename}")
+                continue
+
+            # Lấy khuôn mặt đầu tiên
+            face_image = faces[0]
+            embedding = face_service.extract_embedding(face_image)
+            save_embedding(student_id, embedding)
+            embeddings_saved += 1
+
+            # Lưu ảnh gốc
+            save_dataset_image(name, file.filename or f"{name}_{embeddings_saved}.jpg", contents)
+
+        if embeddings_saved == 0:
+            raise HTTPException(status_code=400, detail="Không thể trích xuất embedding từ các ảnh")
+
+        # Reload cache
+        update_embeddings_cache()
+
+        logger.info(f"✅ Đăng ký múltiplo thành công - Student ID: {student_id} | Name: {name} | Embeddings: {embeddings_saved}")
+
+        return RegisterResponse(
+            status="success",
+            message=f"Đăng ký thành công với {embeddings_saved} ảnh",
+            data={"student_id": student_id, "name": name, "mssv": mssv}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Lỗi không xác định khi đăng ký múltiplo '{name}': {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Lỗi server: {str(e)}")
 
 
@@ -435,9 +537,7 @@ async def delete_student(student_id: int, authorization: Optional[str] = Header(
     
     success = delete_student_and_embedding(student_id)
     if success:
-        global embeddings_cache
-        embeddings_cache.clear()
-        embeddings_cache.extend(get_all_embeddings())
+        update_embeddings_cache()
         
         return {"status": "success", "message": f"Đã xóa sinh viên ID {student_id} và dữ liệu liên quan"}
     

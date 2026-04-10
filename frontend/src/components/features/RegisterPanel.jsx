@@ -43,34 +43,57 @@ function RegisterPanel({ onRegisterSuccess }) {
     }
   }
 
-  async function captureAndRegister() {
+  async function captureMultipleFrames() {
     if (!cameraActive || !videoRef.current || !canvasRef.current) return;
 
-    // Draw video frame to canvas
+    setIsLoading(true);
+    setMessage('📸 Quét khuôn mặt từ các góc khác nhau...');
+    setError(false);
+
+    const frames = [];
     const ctx = canvasRef.current.getContext('2d');
-    canvasRef.current.width = videoRef.current.videoWidth;
-    canvasRef.current.height = videoRef.current.videoHeight;
-    ctx.drawImage(videoRef.current, 0, 0);
+    const frameCount = 40; // Capture 40 frames
+    const intervalMs = 100; // Every 100ms = 10 fps
 
-    const blob = await new Promise(resolve => {
-      canvasRef.current.toBlob(resolve, 'image/jpeg', 0.92);
-    });
+    for (let i = 0; i < frameCount; i++) {
+      if (!videoRef.current || !videoRef.current.readyState) break;
 
-    if (!blob) {
+      canvasRef.current.width = videoRef.current.videoWidth;
+      canvasRef.current.height = videoRef.current.videoHeight;
+      ctx.drawImage(videoRef.current, 0, 0);
+
+      const blob = await new Promise(resolve => {
+        canvasRef.current.toBlob(resolve, 'image/jpeg', 0.85);
+      });
+
+      if (blob) frames.push(blob);
+      
+      // Show progress
+      setMessage(`📸 Quét khuôn mặt ${i + 1}/${frameCount}...`);
+      
+      // Wait before next capture
+      await new Promise(r => setTimeout(r, intervalMs));
+    }
+
+    if (frames.length === 0) {
       setMessage('❌ Không thể chụp ảnh. Vui lòng thử lại.');
       setError(true);
       setIsLoading(false);
       return;
     }
 
-    setIsLoading(true);
-    const formData = new FormData();
-    formData.append('name', name.trim());
-    if (mssv.trim()) formData.append('mssv', mssv.trim());   // gửi MSSV
-    formData.append('file', blob, 'registration.jpg');
-
+    // Send all frames to backend
     try {
-      const res = await apiFetch('/dataset/register', {
+      const formData = new FormData();
+      formData.append('name', name.trim());
+      if (mssv.trim()) formData.append('mssv', mssv.trim());
+      
+      // Append all frames
+      frames.forEach((blob, idx) => {
+        formData.append('files', blob, `frame_${idx}.jpg`);
+      });
+
+      const res = await apiFetch('/dataset/register-multiple', {
         method: 'POST',
         body: formData,
       });
@@ -81,7 +104,7 @@ function RegisterPanel({ onRegisterSuccess }) {
       }
 
       const data = await res.json();
-      setMessage(`✅ Đăng ký thành công: ${name} (${mssv || 'Không có MSSV'})`);
+      setMessage(`✅ Đăng ký thành công: ${name} (${frames.length} ảnh)`);
       
       // Reset + close camera
       setName('');
@@ -128,11 +151,11 @@ function RegisterPanel({ onRegisterSuccess }) {
 
         {cameraActive && (
           <button 
-            onClick={captureAndRegister}
+            onClick={captureMultipleFrames}
             className="btn btn-success"
             disabled={isLoading}
           >
-            {isLoading ? 'Đang lưu...' : '📸 Chụp & Đăng ký ngay'}
+            {isLoading ? 'Đang quét...' : '📸 Bắt đầu quét khuôn mặt'}
           </button>
         )}
 

@@ -16,7 +16,7 @@ logger = logging.getLogger("face-attendance.register_service")
 
 class RegisterService:
     def __init__(self):
-        self.face_service = FaceService(threshold=0.7)
+        self.face_service = FaceService(threshold=0.01)
         logger.info("RegisterService được khởi tạo")
 
     def register_student(self, name: str, mssv: str = None, file=None) -> Tuple[bool, str, Optional[int]]:
