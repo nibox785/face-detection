@@ -1,21 +1,39 @@
 import logging
 import numpy as np
 import cv2
+from typing import Dict, List, Tuple
+
+try:
+    from deepface import DeepFace
+except Exception:  # pragma: no cover - runtime dependency gate
+    DeepFace = None
 
 logger = logging.getLogger("face-attendance.face_engine.detect")
 
-# MOCK implementation for testing without MTCNN
-# In production, use: from mtcnn import MTCNN
-# detector = MTCNN()
+DETECTOR_BACKENDS = ("mtcnn", "opencv")
+MIN_FACE_CONFIDENCE = 0.35
 
-def detect_faces(frame: np.ndarray):
+
+def _run_deepface_detection(image: np.ndarray, backend: str):
+    return DeepFace.extract_faces(
+        img_path=image,
+        detector_backend=backend,
+        align=True,
+        enforce_detection=False,
+    )
+
+def _ensure_deepface_ready() -> None:
+    if DeepFace is None:
+        raise RuntimeError(
+            "DeepFace chưa được cài đặt. Hãy thêm dependencies và chạy pip install -r requirements.txt"
+        )
+
+def detect_faces(frame: np.ndarray) -> List[Tuple[np.ndarray, Dict[str, float]]]:
     """
     Phát hiện khuôn mặt trong ảnh.
     
-    NOTE: This is a MOCK implementation for testing without MTCNN.
-    For production, install mtcnn: pip install mtcnn
-    
-    Trả về list các tuple (cropped_face, bbox) với bbox = {"x": int, "y": int, "w": int, "h": int}
+    Trả về list các tuple (cropped_face, bbox) với
+    bbox = {"x": int, "y": int, "w": int, "h": int, "confidence": float}
     
     Args:
         frame: ảnh đầu vào (BGR từ OpenCV)
@@ -28,32 +46,85 @@ def detect_faces(frame: np.ndarray):
         return []
 
     try:
-        # MOCK: Return a single cropped center region for testing
-        # In production, use MTCNN detector.detect_faces()
-        
-        height, width = frame.shape[:2]
-        
-        # Fake: crop center area as "detected face"
-        margin = 50
-        x1, y1 = max(0, margin), max(0, margin)
-        x2, y2 = min(width, width - margin), min(height, height - margin)
-        
-        if x2 - x1 > 160 and y2 - y1 > 160:
-            cropped_face = frame[y1:y2, x1:x2]
+        _ensure_deepface_ready()
+
+        # DeepFace thường ổn định hơn khi xử lý trên ảnh RGB.
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        orig_h, orig_w = frame.shape[:2]
+        frame_h, frame_w = rgb_frame.shape[:2]
+        scale = 1.0
+
+        # Nếu khung hình quá nhỏ thì upscale để detector dễ bắt mặt hơn.
+        if min(frame_h, frame_w) < 320:
+            scale = 320.0 / float(min(frame_h, frame_w))
+            rgb_frame = cv2.resize(
+                rgb_frame,
+                (int(frame_w * scale), int(frame_h * scale)),
+                interpolation=cv2.INTER_CUBIC,
+            )
+
+        detections = []
+        used_backend = "none"
+        for backend in DETECTOR_BACKENDS:
+            try:
+                detections = _run_deepface_detection(rgb_frame, backend)
+                if detections:
+                    used_backend = backend
+                    break
+            except Exception as backend_error:
+                logger.warning(
+                    "DeepFace detect thất bại với backend=%s: %s",
+                    backend,
+                    str(backend_error),
+                )
+
+        faces: List[Tuple[np.ndarray, Dict[str, float]]] = []
+
+        for det in detections:
+            area = det.get("facial_area") or {}
+            x = int(area.get("x", 0))
+            y = int(area.get("y", 0))
+            w = int(area.get("w", 0))
+            h = int(area.get("h", 0))
+            if w <= 0 or h <= 0:
+                continue
+
+            confidence = float(det.get("confidence", 0.0))
+            if confidence < MIN_FACE_CONFIDENCE:
+                continue
+
+            # Quy đổi bbox từ frame đã resize về frame gốc để khung vẽ bám đúng khuôn mặt.
+            x = int(round(x / scale))
+            y = int(round(y / scale))
+            w = int(round(w / scale))
+            h = int(round(h / scale))
+
+            x = max(0, min(x, orig_w - 1))
+            y = max(0, min(y, orig_h - 1))
+            w = max(1, min(w, orig_w - x))
+            h = max(1, min(h, orig_h - y))
+
+            # Loại box bất thường quá lớn thường đến từ false detection.
+            area_ratio = float(w * h) / float(max(1, orig_w * orig_h))
+            if area_ratio > 0.90:
+                continue
+
+            cropped_face = frame[y:y + h, x:x + w]
+            if cropped_face is None or cropped_face.size == 0:
+                continue
+
             cropped_face = cv2.resize(cropped_face, (160, 160))
-            
             bbox = {
-                "x": x1,
-                "y": y1,
-                "w": x2 - x1,
-                "h": y2 - y1
+                "x": x,
+                "y": y,
+                "w": w,
+                "h": h,
+                "confidence": confidence,
             }
-            
-            logger.debug(f"MOCK Phát hiện 1 khuôn mặt: {bbox}")
-            return [(cropped_face, bbox)]
-        else:
-            logger.warning("Frame quá nhỏ để detect")
-            return []
+            faces.append((cropped_face, bbox))
+
+        logger.debug("Detect faces: tim thay %d khuon mat (backend=%s)", len(faces), used_backend)
+        return faces
 
     except Exception as e:
         logger.error(f"Lỗi khi detect faces: {str(e)}", exc_info=True)

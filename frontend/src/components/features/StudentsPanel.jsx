@@ -96,6 +96,7 @@ function StudentsPanel({ students, attendance, onRefresh }) {
                 <li key={student.id} className="student-item">
                   <div className="student-info">
                     <strong>ID: {student.id}</strong> — {student.name}
+                    {student.mssv ? <span className="student-mssv">MSSV: {student.mssv}</span> : <span className="student-mssv empty">Chưa có MSSV</span>}
                   </div>
                   <div className="student-actions">
                     <button

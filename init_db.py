@@ -1,4 +1,4 @@
-from backend.database.models import init_db
+from backend.database.db import init_db
 
 if __name__ == "__main__":
     init_db()

@@ -35,7 +35,9 @@ class FaceService:
     def cosine_similarity(self, emb1, emb2):
         """Tính cosine similarity giữa 2 embedding"""
         try:
-            return np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
+            # Embedding đã được normalize ở face_engine/facenet/embedding.py,
+            # nên cosine similarity chỉ còn là dot product để tránh tính norm lặp lại.
+            return float(np.dot(emb1, emb2))
         except Exception as e:
             logger.error(f"Lỗi cosine_similarity: {str(e)}")
             return -1.0

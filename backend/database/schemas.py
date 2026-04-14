@@ -13,6 +13,7 @@ class ApiResponse(BaseModel):
 class Student(BaseModel):
     id: int
     name: str
+    mssv: Optional[str] = None
 
 
 class StudentListResponse(ApiResponse):

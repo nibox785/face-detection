@@ -16,7 +16,7 @@ logger = logging.getLogger("face-attendance.register_service")
 
 class RegisterService:
     def __init__(self):
-        self.face_service = FaceService(threshold=0.01)
+        self.face_service = FaceService()
         logger.info("RegisterService được khởi tạo")
 
     def register_student(self, name: str, mssv: str = None, file=None) -> Tuple[bool, str, Optional[int]]:
@@ -55,7 +55,8 @@ class RegisterService:
                 logger.warning(f"Phát hiện {len(faces)} khuôn mặt khi đăng ký. Chỉ sử dụng khuôn mặt đầu tiên.")
 
             # Lấy khuôn mặt rõ nhất (thường là khuôn mặt đầu tiên)
-            face_image = faces[0]
+            first_face = faces[0]
+            face_image = first_face[0] if isinstance(first_face, tuple) else first_face
 
             # Trích xuất embedding
             embedding = self.face_service.extract_embedding(face_image)

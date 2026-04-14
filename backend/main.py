@@ -5,8 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import datetime
 import os
 
-from backend.database.db import init_db, get_all_embeddings
-from backend.api.routes import router, update_embeddings_cache
+from backend.database.db import init_db
+from backend.api.routes import router, update_embeddings_cache, embeddings_cache
 
 # ====================== LOGGING CONFIG ======================
 logging.basicConfig(

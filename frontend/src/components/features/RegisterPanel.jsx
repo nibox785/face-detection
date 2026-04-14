@@ -1,6 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiFetch } from '../../api/apiClient';
 
+const REGISTRATION_STEPS = [
+  'Nhìn thẳng vào camera',
+  'Xoay nhẹ sang trái',
+  'Xoay nhẹ sang phải',
+  'Ngẩng mặt lên',
+  'Cúi mặt xuống',
+  'Nghiêng đầu sang trái',
+  'Nghiêng đầu sang phải',
+  'Tiến gần camera một chút',
+  'Lùi xa camera một chút',
+  'Nhìn thẳng và giữ ổn định',
+];
+
 function RegisterPanel({ onRegisterSuccess }) {
   const [name, setName] = useState('');
   const [mssv, setMssv] = useState('');
@@ -8,6 +21,9 @@ function RegisterPanel({ onRegisterSuccess }) {
   const [error, setError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [capturedFrames, setCapturedFrames] = useState([]);
+  const [stepHint, setStepHint] = useState('');
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -35,7 +51,10 @@ function RegisterPanel({ onRegisterSuccess }) {
       await videoRef.current.play();
       streamRef.current = stream;
       setCameraActive(true);
-      setMessage('✅ Camera đã mở. Hãy nhìn thẳng vào camera...');
+      setStepIndex(0);
+      setCapturedFrames([]);
+      setStepHint('');
+      setMessage(`✅ Camera đã mở. Bước 1/${REGISTRATION_STEPS.length}: ${REGISTRATION_STEPS[0]}`);
       setError(false);
     } catch (err) {
       setMessage('❌ Không mở được camera. Vui lòng kiểm tra quyền truy cập.');
@@ -43,44 +62,104 @@ function RegisterPanel({ onRegisterSuccess }) {
     }
   }
 
-  async function captureMultipleFrames() {
+  async function captureCurrentStep() {
     if (!cameraActive || !videoRef.current || !canvasRef.current) return;
 
-    setIsLoading(true);
-    setMessage('📸 Quét khuôn mặt từ các góc khác nhau...');
-    setError(false);
-
-    const frames = [];
-    const ctx = canvasRef.current.getContext('2d');
-    const frameCount = 40; // Capture 40 frames
-    const intervalMs = 100; // Every 100ms = 10 fps
-
-    for (let i = 0; i < frameCount; i++) {
-      if (!videoRef.current || !videoRef.current.readyState) break;
-
-      canvasRef.current.width = videoRef.current.videoWidth;
-      canvasRef.current.height = videoRef.current.videoHeight;
-      ctx.drawImage(videoRef.current, 0, 0);
-
-      const blob = await new Promise(resolve => {
-        canvasRef.current.toBlob(resolve, 'image/jpeg', 0.85);
-      });
-
-      if (blob) frames.push(blob);
-      
-      // Show progress
-      setMessage(`📸 Quét khuôn mặt ${i + 1}/${frameCount}...`);
-      
-      // Wait before next capture
-      await new Promise(r => setTimeout(r, intervalMs));
+    if (stepIndex >= REGISTRATION_STEPS.length) {
+      setMessage('Đã chụp đủ ảnh. Hãy gửi đăng ký.');
+      setError(false);
+      return;
     }
 
-    if (frames.length === 0) {
-      setMessage('❌ Không thể chụp ảnh. Vui lòng thử lại.');
+    setIsLoading(true);
+    setError(false);
+
+    const ctx = canvasRef.current.getContext('2d');
+    canvasRef.current.width = videoRef.current.videoWidth;
+    canvasRef.current.height = videoRef.current.videoHeight;
+    ctx.drawImage(videoRef.current, 0, 0);
+
+    const blob = await new Promise(resolve => {
+      canvasRef.current.toBlob(resolve, 'image/jpeg', 0.85);
+    });
+
+    if (!blob) {
+      setMessage('❌ Không thể chụp ảnh ở bước hiện tại. Vui lòng thử lại.');
       setError(true);
       setIsLoading(false);
       return;
     }
+
+    const previewFormData = new FormData();
+    previewFormData.append('file', blob, `preview_step_${stepIndex + 1}.jpg`);
+
+    const previewResponse = await apiFetch('/face/check', {
+      method: 'POST',
+      body: previewFormData,
+    });
+
+    if (!previewResponse.ok) {
+      const errorData = await previewResponse.json().catch(() => ({}));
+      setMessage(`❌ ${errorData.detail || 'Không kiểm tra được khuôn mặt. Hãy căn chỉnh lại ảnh.'}`);
+      setError(true);
+      setIsLoading(false);
+      return;
+    }
+
+    const previewData = await previewResponse.json();
+    const faceCount = previewData?.data?.face_count ?? 0;
+
+    if (faceCount < 1) {
+      setMessage(`❌ Bước ${stepIndex + 1}: không phát hiện được khuôn mặt. Hãy giữ mặt rõ hơn rồi chụp lại.`);
+      setError(true);
+      setIsLoading(false);
+      return;
+    }
+
+    const bestFace = previewData.data.faces?.[0];
+    const qualityScore = bestFace?.quality_score ?? 0;
+    setStepHint(`Đã phát hiện mặt, quality=${qualityScore.toFixed(2)}`);
+
+    const currentStepNumber = stepIndex + 1;
+    const currentStepName = REGISTRATION_STEPS[stepIndex];
+
+    setCapturedFrames(prev => [
+      ...prev,
+      {
+        blob,
+        stepName: currentStepName,
+        stepNumber: currentStepNumber,
+      },
+    ]);
+
+    if (currentStepNumber >= REGISTRATION_STEPS.length) {
+      setStepIndex(REGISTRATION_STEPS.length);
+      setMessage(`✅ Đã chụp đủ ${REGISTRATION_STEPS.length} bước. Nhấn "Gửi đăng ký" để trích xuất đặc trưng khuôn mặt.`);
+    } else {
+      const nextIndex = currentStepNumber;
+      setStepIndex(nextIndex);
+      setMessage(
+        `✅ Đã chụp xong bước ${currentStepNumber}/${REGISTRATION_STEPS.length}. ` +
+        `Tiếp theo: ${REGISTRATION_STEPS[nextIndex]}`
+      );
+    }
+
+    setIsLoading(false);
+  }
+
+  async function submitRegistration() {
+    if (capturedFrames.length < REGISTRATION_STEPS.length) {
+      setMessage(
+        `❌ Chưa đủ ảnh (${capturedFrames.length}/${REGISTRATION_STEPS.length}). ` +
+        'Hãy chụp đủ các góc mặt trước khi gửi.'
+      );
+      setError(true);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(false);
+    setMessage('⏳ Đang gửi ảnh đăng ký và trích xuất đặc trưng khuôn mặt...');
 
     // Send all frames to backend
     try {
@@ -88,9 +167,12 @@ function RegisterPanel({ onRegisterSuccess }) {
       formData.append('name', name.trim());
       if (mssv.trim()) formData.append('mssv', mssv.trim());
       
-      // Append all frames
-      frames.forEach((blob, idx) => {
-        formData.append('files', blob, `frame_${idx}.jpg`);
+      capturedFrames.forEach((frame) => {
+        const safeStep = frame.stepName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '');
+        formData.append('files', frame.blob, `step_${frame.stepNumber}_${safeStep}.jpg`);
       });
 
       const res = await apiFetch('/dataset/register-multiple', {
@@ -104,11 +186,13 @@ function RegisterPanel({ onRegisterSuccess }) {
       }
 
       const data = await res.json();
-      setMessage(`✅ Đăng ký thành công: ${name} (${frames.length} ảnh)`);
+      setMessage(`✅ Đăng ký thành công: ${name} (${capturedFrames.length}/${REGISTRATION_STEPS.length} góc mặt)`);
       
       // Reset + close camera
       setName('');
       setMssv('');
+      setStepIndex(0);
+      setCapturedFrames([]);
       setCameraActive(false);
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
@@ -150,13 +234,36 @@ function RegisterPanel({ onRegisterSuccess }) {
         </div>
 
         {cameraActive && (
-          <button 
-            onClick={captureMultipleFrames}
-            className="btn btn-success"
-            disabled={isLoading}
-          >
-            {isLoading ? 'Đang quét...' : '📸 Bắt đầu quét khuôn mặt'}
-          </button>
+          <>
+            <p className="helper-text">
+              Quy trình ngân hàng: chụp {REGISTRATION_STEPS.length} ảnh theo hướng dẫn từng bước để trích xuất đặc trưng khuôn mặt khi đăng ký.
+            </p>
+            <p className="helper-text">
+              {stepIndex < REGISTRATION_STEPS.length
+                ? `Bước hiện tại: ${stepIndex + 1}/${REGISTRATION_STEPS.length} - ${REGISTRATION_STEPS[stepIndex]}`
+                : `Đã hoàn tất ${REGISTRATION_STEPS.length}/${REGISTRATION_STEPS.length} bước chụp`}
+            </p>
+            <p className="helper-text">
+              Đã chụp: {capturedFrames.length}/{REGISTRATION_STEPS.length}
+            </p>
+            {stepHint && <p className="helper-text">{stepHint}</p>}
+            <div className="button-row">
+              <button 
+                onClick={captureCurrentStep}
+                className="btn btn-success"
+                disabled={isLoading || stepIndex >= REGISTRATION_STEPS.length}
+              >
+                {isLoading ? 'Đang chụp...' : '📸 Chụp bước hiện tại'}
+              </button>
+              <button
+                onClick={submitRegistration}
+                className="btn btn-primary"
+                disabled={isLoading || capturedFrames.length < REGISTRATION_STEPS.length}
+              >
+                Gửi đăng ký
+              </button>
+            </div>
+          </>
         )}
 
         {message && <div className={error ? 'message error' : 'message success'}>{message}</div>}

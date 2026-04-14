@@ -8,9 +8,11 @@ function AttendancePanel() {
   
   const [isRunning, setIsRunning] = useState(false);
   const [log, setLog] = useState([]);
-  const [intervalMs, setIntervalMs] = useState(3000);
+  const [intervalMs, setIntervalMs] = useState(450);
   const [stream, setStream] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const lastRecognitionRef = useRef(new Map());
+  const captureMetaRef = useRef({ width: 0, height: 0 });
 
   // Cleanup camera khi component unmount
   useEffect(() => {
@@ -66,32 +68,46 @@ function AttendancePanel() {
     const video = videoRef.current;
     if (!drawCanvas || !video || video.videoWidth === 0) return;
 
-    // Set canvas size to match video
-    drawCanvas.width = video.videoWidth;
-    drawCanvas.height = video.videoHeight;
+    // Set canvas size to match video only when needed.
+    if (drawCanvas.width !== video.videoWidth || drawCanvas.height !== video.videoHeight) {
+      drawCanvas.width = video.videoWidth;
+      drawCanvas.height = video.videoHeight;
+    }
 
     const ctx = drawCanvas.getContext('2d');
     ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+
+    const sourceWidth = captureMetaRef.current.width || drawCanvas.width;
+    const sourceHeight = captureMetaRef.current.height || drawCanvas.height;
+    const scaleX = drawCanvas.width / sourceWidth;
+    const scaleY = drawCanvas.height / sourceHeight;
 
     recognitionResults.forEach((result) => {
       if (!result.bbox) return;
 
       const { x, y, w, h } = result.bbox;
+      const sx = Math.round(x * scaleX);
+      const sy = Math.round(y * scaleY);
+      const sw = Math.round(w * scaleX);
+      const sh = Math.round(h * scaleY);
       const color = result.student_id ? '#00ff00' : '#ff0000'; // Green = recognized, Red = unknown
 
       // Draw bounding box
       ctx.strokeStyle = color;
       ctx.lineWidth = 3;
-      ctx.strokeRect(x, y, w, h);
+      ctx.strokeRect(sx, sy, sw, sh);
 
-      // Draw name if recognized
-      if (result.name) {
-        ctx.fillStyle = color;
-        ctx.font = 'bold 16px Arial';
-        ctx.fillRect(x, y - 30, w, 30);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(result.name, x + 5, y - 10);
-      }
+      // Always draw label above box (recognized name or Unknown)
+      const label = result.name || 'Unknown';
+      ctx.font = 'bold 16px Arial';
+      const labelWidth = Math.max(100, ctx.measureText(label).width + 16);
+      const labelX = sx;
+      const labelY = Math.max(0, sy - 30);
+
+      ctx.fillStyle = color;
+      ctx.fillRect(labelX, labelY, labelWidth, 28);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(label, labelX + 8, labelY + 19);
     });
   }
 
@@ -100,13 +116,26 @@ function AttendancePanel() {
     const canvas = canvasRef.current;
     if (!video || !canvas || video.videoWidth === 0) return null;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    const maxCaptureWidth = 640;
+    const srcWidth = video.videoWidth;
+    const srcHeight = video.videoHeight;
+    const scale = srcWidth > maxCaptureWidth ? maxCaptureWidth / srcWidth : 1;
+    const targetWidth = Math.max(1, Math.round(srcWidth * scale));
+    const targetHeight = Math.max(1, Math.round(srcHeight * scale));
+
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     return new Promise((resolve) => {
-      canvas.toBlob(resolve, 'image/jpeg', 0.85);
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          resolve(null);
+          return;
+        }
+        resolve({ blob, width: targetWidth, height: targetHeight });
+      }, 'image/jpeg', 0.82);
     });
   }
 
@@ -114,20 +143,23 @@ function AttendancePanel() {
     if (isProcessing) return;
 
     setIsProcessing(true);
-    const blob = await captureFrame();
+    const frameData = await captureFrame();
 
-    if (!blob) {
+    if (!frameData || !frameData.blob) {
       addLog('Không thể chụp ảnh từ camera', 'error');
       setIsProcessing(false);
       return;
     }
 
+    captureMetaRef.current = {
+      width: frameData.width,
+      height: frameData.height,
+    };
+
     const formData = new FormData();
-    formData.append('file', blob, 'attendance.jpg');
+    formData.append('file', frameData.blob, 'attendance.jpg');
 
     try {
-      addLog('Đang gửi ảnh lên server...', 'info');
-
       const res = await apiFetch('/recognize', { 
         method: 'POST', 
         body: formData 
@@ -149,12 +181,20 @@ function AttendancePanel() {
       // Vẽ bounding boxes và tên trên canvas
       drawBoundingBoxes(json.data);
 
-      // Hiển thị log cho mỗi khuôn mặt phát hiện được
-      json.data.forEach((item) => {
-        if (item.student_id) {
-          addLog(`✓ ${item.name} (${item.score})`, 'success');
-        } else {
-          addLog(`? Không nhận diện (${item.score})`, 'warning');
+      // Chỉ log khi nhận diện ổn định hoặc thay đổi trạng thái để tránh nhấp nháy.
+      const now = Date.now();
+      json.data.forEach((item, index) => {
+        const key = item.student_id ? `student:${item.student_id}` : `unknown:${index}`;
+        const previous = lastRecognitionRef.current.get(key) || { name: null, time: 0 };
+        const labelName = item.student_id ? item.name : 'Unknown';
+
+        if (previous.name !== labelName || now - previous.time > 3000) {
+          if (item.student_id) {
+            addLog(`✓ ${item.name} (${item.score})`, 'success');
+          } else {
+            addLog(`? Unknown (${item.score})`, 'warning');
+          }
+          lastRecognitionRef.current.set(key, { name: labelName, time: now });
         }
       });
 
@@ -269,8 +309,8 @@ function AttendancePanel() {
             <input
               type="number"
               value={intervalMs}
-              min="1000"
-              step="500"
+              min="250"
+              step="100"
               onChange={(e) => setIntervalMs(Number(e.target.value))}
               disabled={isRunning}
             />

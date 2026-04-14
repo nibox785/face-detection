@@ -9,6 +9,12 @@ DB_PATH = "attendance.db"
 def get_connection():
     return sqlite3.connect(DB_PATH)
 
+
+def _column_exists(cursor, table_name: str, column_name: str) -> bool:
+    cursor.execute(f"PRAGMA table_info({table_name})")
+    columns = [row[1] for row in cursor.fetchall()]
+    return column_name in columns
+
 # ===============================
 # INIT & BASIC
 # ===============================
@@ -18,12 +24,21 @@ def init_db():
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS students (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
         mssv TEXT UNIQUE,                 
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """)
+
+    # Migration cho database cũ chưa có cột mssv / created_at
+    if not _column_exists(cursor, "students", "mssv"):
+        cursor.execute("ALTER TABLE students ADD COLUMN mssv TEXT")
+    if not _column_exists(cursor, "students", "created_at"):
+        cursor.execute("ALTER TABLE students ADD COLUMN created_at DATETIME")
+
+    # Tạo unique index cho MSSV để tránh trùng dữ liệu học viên
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_students_mssv_unique ON students(mssv)")
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS embeddings (
@@ -124,19 +139,19 @@ def check_attendance_today(student_id):
 def get_all_students():
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name FROM students ORDER BY name")
+    cursor.execute("SELECT id, name, mssv FROM students ORDER BY name")
     rows = cursor.fetchall()
     conn.close()
-    return [{"id": row[0], "name": row[1]} for row in rows]
+    return [{"id": row[0], "name": row[1], "mssv": row[2]} for row in rows]
 
 
 def get_student_by_id(student_id: int) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name FROM students WHERE id = ?", (student_id,))
+    cursor.execute("SELECT id, name, mssv FROM students WHERE id = ?", (student_id,))
     row = cursor.fetchone()
     conn.close()
-    return {"id": row[0], "name": row[1]} if row else None
+    return {"id": row[0], "name": row[1], "mssv": row[2]} if row else None
 
 
 def delete_student_and_embedding(student_id: int) -> bool:
@@ -158,10 +173,10 @@ def delete_student_and_embedding(student_id: int) -> bool:
 def get_student_by_name(name: str) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, name FROM students WHERE name = ?", (name.strip(),))
+    cursor.execute("SELECT id, name, mssv FROM students WHERE name = ?", (name.strip(),))
     row = cursor.fetchone()
     conn.close()
-    return {"id": row[0], "name": row[1]} if row else None
+    return {"id": row[0], "name": row[1], "mssv": row[2]} if row else None
 
 
 def get_student_by_mssv(mssv: str) -> Optional[Dict[str, Any]]:
@@ -200,6 +215,17 @@ def create_student(name: str, mssv: Optional[str] = None) -> int:
     conn.commit()
     conn.close()
     return student_id
+
+
+def update_student_mssv(student_id: int, mssv: Optional[str]) -> None:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE students SET mssv = ? WHERE id = ?",
+        (mssv.strip() if mssv and mssv.strip() else None, student_id)
+    )
+    conn.commit()
+    conn.close()
 
 
 # ===============================
