@@ -15,13 +15,13 @@ def detect_faces(frame: np.ndarray):
     NOTE: This is a MOCK implementation for testing without MTCNN.
     For production, install mtcnn: pip install mtcnn
     
-    Trả về list các cropped face (ảnh khuôn mặt đã cắt).
+    Trả về list các tuple (cropped_face, bbox) với bbox = {"x": int, "y": int, "w": int, "h": int}
     
     Args:
         frame: ảnh đầu vào (BGR từ OpenCV)
     
     Returns:
-        list of numpy arrays (cropped faces)
+        list of tuples (cropped_face, bbox)
     """
     if frame is None or frame.size == 0:
         logger.warning("Input frame rỗng")
@@ -41,8 +41,16 @@ def detect_faces(frame: np.ndarray):
         if x2 - x1 > 160 and y2 - y1 > 160:
             cropped_face = frame[y1:y2, x1:x2]
             cropped_face = cv2.resize(cropped_face, (160, 160))
-            logger.debug(f"MOCK Phát hiện 1 khuôn mặt")
-            return [cropped_face]
+            
+            bbox = {
+                "x": x1,
+                "y": y1,
+                "w": x2 - x1,
+                "h": y2 - y1
+            }
+            
+            logger.debug(f"MOCK Phát hiện 1 khuôn mặt: {bbox}")
+            return [(cropped_face, bbox)]
         else:
             logger.warning("Frame quá nhỏ để detect")
             return []

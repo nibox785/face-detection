@@ -4,6 +4,7 @@ import { apiFetch, API_BASE } from '../../api/apiClient';
 function AttendancePanel() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const drawCanvasRef = useRef(null);
   
   const [isRunning, setIsRunning] = useState(false);
   const [log, setLog] = useState([]);
@@ -32,6 +33,13 @@ function AttendancePanel() {
       });
       videoRef.current.srcObject = media;
       await videoRef.current.play();
+      
+      // Set canvas size when video metadata is loaded
+      videoRef.current.onloadedmetadata = () => {
+        drawCanvasRef.current.width = videoRef.current.videoWidth;
+        drawCanvasRef.current.height = videoRef.current.videoHeight;
+      };
+
       setStream(media);
       addLog('Camera đã mở thành công', 'success');
       return media;
@@ -51,6 +59,40 @@ function AttendancePanel() {
       text: `${prefix} ${timestamp} - ${message}`,
       type
     }, ...prev].slice(0, 50)); // Giới hạn chỉ giữ 50 dòng log mới nhất
+  }
+
+  function drawBoundingBoxes(recognitionResults) {
+    const drawCanvas = drawCanvasRef.current;
+    const video = videoRef.current;
+    if (!drawCanvas || !video || video.videoWidth === 0) return;
+
+    // Set canvas size to match video
+    drawCanvas.width = video.videoWidth;
+    drawCanvas.height = video.videoHeight;
+
+    const ctx = drawCanvas.getContext('2d');
+    ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+
+    recognitionResults.forEach((result) => {
+      if (!result.bbox) return;
+
+      const { x, y, w, h } = result.bbox;
+      const color = result.student_id ? '#00ff00' : '#ff0000'; // Green = recognized, Red = unknown
+
+      // Draw bounding box
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x, y, w, h);
+
+      // Draw name if recognized
+      if (result.name) {
+        ctx.fillStyle = color;
+        ctx.font = 'bold 16px Arial';
+        ctx.fillRect(x, y - 30, w, 30);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(result.name, x + 5, y - 10);
+      }
+    });
   }
 
   async function captureFrame() {
@@ -99,16 +141,20 @@ function AttendancePanel() {
 
       if (!json.data || json.data.length === 0) {
         addLog(json.message || 'Không phát hiện được khuôn mặt nào', 'warning');
+        drawBoundingBoxes([]); // Clear boxes
         setIsProcessing(false);
         return;
       }
 
-      // Hiển thị tên sinh viên nếu có (từ backend trả về)
+      // Vẽ bounding boxes và tên trên canvas
+      drawBoundingBoxes(json.data);
+
+      // Hiển thị log cho mỗi khuôn mặt phát hiện được
       json.data.forEach((item) => {
         if (item.student_id) {
-          addLog(`Sinh viên ID ${item.student_id} điểm danh thành công (Score: ${item.score})`, 'success');
+          addLog(`✓ ${item.name} (${item.score})`, 'success');
         } else {
-          addLog(`Không nhận diện được khuôn mặt (Score: ${item.score})`, 'warning');
+          addLog(`? Không nhận diện (${item.score})`, 'warning');
         }
       });
 
@@ -177,12 +223,25 @@ function AttendancePanel() {
       <section className="panel-card camera-panel">
         <h2>📸 Điểm danh bằng khuôn mặt</h2>
         
-        <video 
-          ref={videoRef} 
-          className="camera-preview" 
-          muted 
-          playsInline 
-        />
+        <div style={{ position: 'relative', display: 'inline-block', width: '100%' }}>
+          <video 
+            ref={videoRef} 
+            className="camera-preview" 
+            muted 
+            playsInline 
+          />
+          <canvas 
+            ref={drawCanvasRef}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
+            }}
+          />
+        </div>
         <canvas ref={canvasRef} hidden />
 
         <div className="button-row">

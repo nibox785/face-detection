@@ -325,14 +325,14 @@ async def register_dataset_multiple(
                 logger.warning(f"Không thể đọc file ảnh: {file.filename}")
                 continue
 
-            faces = face_service.detect(frame)
+            faces_with_bbox = face_service.detect(frame)
             
-            if not faces:
+            if not faces_with_bbox:
                 logger.warning(f"Không phát hiện khuôn mặt trong {file.filename}")
                 continue
 
             # Lấy khuôn mặt đầu tiên
-            face_image = faces[0]
+            face_image, bbox = faces_with_bbox[0]
             embedding = face_service.extract_embedding(face_image)
             save_embedding(student_id, embedding)
             embeddings_saved += 1
@@ -378,37 +378,43 @@ async def recognize(file: UploadFile = File(...)):
         if frame is None:
             raise HTTPException(status_code=400, detail="Không thể đọc được file ảnh")
 
-        faces = face_service.detect(frame)
+        faces_with_bbox = face_service.detect(frame)
 
-        if not faces:
+        if not faces_with_bbox:
             return RecognizeResponse(
                 status="success",
                 message="Không phát hiện được khuôn mặt nào trong ảnh.",
                 data=[]
             )
 
-        logger.info(f"Phát hiện {len(faces)} khuôn mặt")
+        logger.info(f"Phát hiện {len(faces_with_bbox)} khuôn mặt")
 
         results: List[RecognizeResult] = []
 
-        for face in faces:
-            embedding = face_service.extract_embedding(face)
+        for face_image, bbox in faces_with_bbox:
+            embedding = face_service.extract_embedding(face_image)
             student_id, score = face_service.recognize(embedding, embeddings_cache)
+            
+            student_name = None
 
             if student_id:
                 attendance_service.mark_attendance(student_id)
-                logger.info(f"Điểm danh thành công - Student ID: {student_id} | Score: {score:.4f}")
+                student = get_student_by_id(student_id)
+                student_name = student['name'] if student else None
+                logger.info(f"Điểm danh thành công - Student ID: {student_id} | Name: {student_name} | Score: {score:.4f}")
 
             results.append(
                 RecognizeResult(
                     student_id=student_id,
-                    score=round(float(score), 4)
+                    name=student_name,
+                    score=round(float(score), 4),
+                    bbox=bbox
                 )
             )
 
         return RecognizeResponse(
             status="success",
-            message=f"Đã xử lý {len(faces)} khuôn mặt.",
+            message=f"Đã xử lý {len(faces_with_bbox)} khuôn mặt.",
             data=results
         )
 

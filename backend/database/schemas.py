@@ -37,7 +37,9 @@ class AttendanceResponse(ApiResponse):
  # ====================== RECOGNIZE ======================
 class RecognizeResult(BaseModel):
     student_id: Optional[int] = None
+    name: Optional[str] = None
     score: float
+    bbox: Optional[Dict[str, int]] = None  # {"x": int, "y": int, "w": int, "h": int}
 
 class RecognizeResponse(ApiResponse):
     data: List[RecognizeResult]
