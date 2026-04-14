@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, status, Form, Query, Header
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 import numpy as np
 import cv2
 import logging
@@ -638,8 +638,34 @@ async def recognize(file: UploadFile = File(...)):
         results: List[RecognizeResult] = []
 
         for face_image, bbox in faces_with_bbox:
-            embedding = face_service.extract_embedding(face_image)
-            student_id, score = face_service.recognize(embedding, embeddings_cache)
+            try:
+                # === LIVENESS DETECTION ===
+                embedding, is_real, spoof_score = face_service.get_embedding_with_liveness(face_image)
+                
+                if not is_real and spoof_score > 0.65:   # Ngưỡng spoof (có thể điều chỉnh)
+                    results.append(
+                        RecognizeResult(
+                            student_id=None,
+                            name="Spoof Detected",
+                            score=0.0,
+                            bbox={
+                                "x": bbox.get("x", 0),
+                                "y": bbox.get("y", 0),
+                                "w": bbox.get("w", 0),
+                                "h": bbox.get("h", 0),
+                                "confidence": float(bbox.get("confidence", 0.0))
+                            } if bbox else None
+                        )
+                    )
+                    logger.warning(f"🚨 Phát hiện spoof attack! Score: {spoof_score:.4f}")
+                    continue
+
+                # Nếu là người thật → tiếp tục recognize bình thường
+                student_id, score = face_service.recognize(embedding, embeddings_cache)
+                
+            except Exception as e:
+                logger.error(f"Lỗi xử lý face với liveness: {str(e)}")
+                continue
             
             student_name = "Unknown"
 
@@ -654,7 +680,13 @@ async def recognize(file: UploadFile = File(...)):
                     student_id=student_id,
                     name=student_name,
                     score=round(float(score), 4),
-                    bbox=bbox
+                    bbox={
+                        "x": bbox.get("x", 0),
+                        "y": bbox.get("y", 0),
+                        "w": bbox.get("w", 0),
+                        "h": bbox.get("h", 0),
+                        "confidence": float(bbox.get("confidence", 0.0))  
+                    } if bbox else None
                 )
             )
 
@@ -668,7 +700,57 @@ async def recognize(file: UploadFile = File(...)):
         logger.error(f"Lỗi recognize: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Lỗi server khi xử lý nhận diện")
 
+# ====================== LIVENESS DETECTION ======================
+@router.post("/face/liveness-check")
+async def liveness_check(file: UploadFile = File(...)):
+    """Kiểm tra liveness (chống spoofing) - Rất quan trọng cho demo"""
+    validate_image_file(file)
+    
+    try:
+        contents = await file.read()
+        np_arr = np.frombuffer(contents, np.uint8)
+        frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
+        if frame is None:
+            raise HTTPException(status_code=400, detail="Không thể đọc được file ảnh")
+
+        faces_with_bbox = face_service.detect(frame)
+        
+        if not faces_with_bbox:
+            return {
+                "status": "error",
+                "message": "Không phát hiện được khuôn mặt nào trong ảnh."
+            }
+
+        # Chỉ lấy khuôn mặt tốt nhất
+        best_face = select_best_face_for_registration(faces_with_bbox, frame.shape)
+        if not best_face:
+            return {
+                "status": "error",
+                "message": "Không thể xử lý khuôn mặt"
+            }
+
+        face_image, bbox = best_face
+        
+        # Gọi hàm liveness mới
+        embedding, is_real, spoof_score = face_service.get_embedding_with_liveness(face_image)
+        
+        return {
+            "status": "success",
+            "message": "Liveness check completed",
+            "data": {
+                "is_real": is_real,
+                "spoof_score": round(float(spoof_score), 4),
+                "verdict": "✅ Người thật" if is_real else "❌ Có dấu hiệu giả mạo (ảnh/video/mask)",
+                "recommendation": "Vui lòng nhìn thẳng camera và nháy mắt nếu bị từ chối" if not is_real else None,
+                "bbox": bbox
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Lỗi liveness_check: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Lỗi server khi kiểm tra liveness")
+    
 # ====================== MANAGEMENT API ======================
 @router.get("/students", response_model=StudentListResponse)
 async def get_students(authorization: Optional[str] = Header(None)):

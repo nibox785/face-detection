@@ -2,7 +2,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-# === Response chung (Unified) ===
+# ====================== BASE RESPONSE ======================
 class ApiResponse(BaseModel):
     status: str = "success"
     message: str
@@ -35,23 +35,38 @@ class AttendanceRecord(BaseModel):
 class AttendanceResponse(ApiResponse):
     data: List[AttendanceRecord]
 
- # ====================== RECOGNIZE ======================
+
+# ====================== BBOX (Mới) ======================
+class BBox(BaseModel):
+    """Model cho bounding box của khuôn mặt"""
+    x: int
+    y: int
+    w: int
+    h: int
+    confidence: float   # ← Quan trọng: phải là float
+
+
+# ====================== RECOGNIZE ======================
 class RecognizeResult(BaseModel):
     student_id: Optional[int] = None
     name: Optional[str] = None
     score: float
-    bbox: Optional[Dict[str, int]] = None  # {"x": int, "y": int, "w": int, "h": int}
+    bbox: Optional[BBox] = None 
+
 
 class RecognizeResponse(ApiResponse):
     data: List[RecognizeResult]
+
 
 # ====================== AUTH & REGISTER ======================
 class LoginRequest(BaseModel):
     username: str
     password: str
 
+
 class LoginResponse(ApiResponse):
     data: Optional[Dict[str, Any]] = None
+
 
 class RegisterResponse(ApiResponse):
     data: Optional[Dict[str, Any]] = None

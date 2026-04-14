@@ -197,6 +197,89 @@ button, input {
   background: #000;
 }
 
+.attendance-toast {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  min-width: 240px;
+  max-width: 80%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(5, 150, 105, 0.95);
+  color: #ffffff;
+  box-shadow: 0 14px 30px rgba(5, 150, 105, 0.28);
+  z-index: 6;
+  animation: attendanceToastInOut 2.2s ease;
+}
+
+.attendance-toast-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.9;
+}
+
+.attendance-toast-message {
+  margin-top: 4px;
+  font-size: 0.98rem;
+  font-weight: 600;
+}
+
+.attendance-log-item {
+  margin-bottom: 10px;
+  border: 1px solid #d1fae5;
+  background: #ecfdf5;
+  border-radius: 10px;
+  padding: 10px 12px;
+  animation: attendanceLogEnter 0.35s ease;
+}
+
+.attendance-log-title {
+  font-weight: 700;
+  color: #065f46;
+  font-size: 0.95rem;
+}
+
+.attendance-log-meta {
+  margin-top: 2px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #047857;
+  font-size: 0.84rem;
+}
+
+@keyframes attendanceToastInOut {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.96);
+  }
+  12% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  78% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.96);
+  }
+}
+
+@keyframes attendanceLogEnter {
+  0% {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .message {
   padding: 14px 16px;
   border-radius: 14px;

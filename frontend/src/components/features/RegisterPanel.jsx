@@ -236,9 +236,6 @@ function RegisterPanel({ onRegisterSuccess }) {
         {cameraActive && (
           <>
             <p className="helper-text">
-              Quy trình ngân hàng: chụp {REGISTRATION_STEPS.length} ảnh theo hướng dẫn từng bước để trích xuất đặc trưng khuôn mặt khi đăng ký.
-            </p>
-            <p className="helper-text">
               {stepIndex < REGISTRATION_STEPS.length
                 ? `Bước hiện tại: ${stepIndex + 1}/${REGISTRATION_STEPS.length} - ${REGISTRATION_STEPS[stepIndex]}`
                 : `Đã hoàn tất ${REGISTRATION_STEPS.length}/${REGISTRATION_STEPS.length} bước chụp`}

@@ -1,131 +1,77 @@
 import logging
-import numpy as np
-import cv2
 from typing import Dict, List, Tuple
+
+import numpy as np
 
 try:
     from deepface import DeepFace
-except Exception:  # pragma: no cover - runtime dependency gate
+except ImportError:
     DeepFace = None
 
 logger = logging.getLogger("face-attendance.face_engine.detect")
 
-DETECTOR_BACKENDS = ("mtcnn", "opencv")
-MIN_FACE_CONFIDENCE = 0.35
 
-
-def _run_deepface_detection(image: np.ndarray, backend: str):
-    return DeepFace.extract_faces(
-        img_path=image,
-        detector_backend=backend,
-        align=True,
-        enforce_detection=False,
-    )
-
-def _ensure_deepface_ready() -> None:
+def _ensure_deepface() -> None:
     if DeepFace is None:
-        raise RuntimeError(
-            "DeepFace chưa được cài đặt. Hãy thêm dependencies và chạy pip install -r requirements.txt"
-        )
+        raise RuntimeError("DeepFace chưa được cài đặt. Chạy: pip install deepface")
 
-def detect_faces(frame: np.ndarray) -> List[Tuple[np.ndarray, Dict[str, float]]]:
-    """
-    Phát hiện khuôn mặt trong ảnh.
-    
-    Trả về list các tuple (cropped_face, bbox) với
-    bbox = {"x": int, "y": int, "w": int, "h": int, "confidence": float}
-    
-    Args:
-        frame: ảnh đầu vào (BGR từ OpenCV)
-    
-    Returns:
-        list of tuples (cropped_face, bbox)
-    """
+
+def _safe_bbox(area: Dict, frame_shape: Tuple[int, int, int]) -> Dict:
+    h_frame, w_frame = frame_shape[:2]
+
+    x = int(max(0, area.get("x", 0)))
+    y = int(max(0, area.get("y", 0)))
+    w = int(max(0, area.get("w", 0)))
+    h = int(max(0, area.get("h", 0)))
+
+    if w <= 0 and "x2" in area:
+        w = int(max(0, int(area.get("x2", x)) - x))
+    if h <= 0 and "y2" in area:
+        h = int(max(0, int(area.get("y2", y)) - y))
+
+    if x + w > w_frame:
+        w = max(0, w_frame - x)
+    if y + h > h_frame:
+        h = max(0, h_frame - y)
+
+    return {"x": x, "y": y, "w": w, "h": h}
+
+
+def detect_faces(frame: np.ndarray) -> List[Tuple[np.ndarray, Dict]]:
+    """Trả về danh sách (face_image, bbox) với bbox gồm x, y, w, h, confidence."""
     if frame is None or frame.size == 0:
-        logger.warning("Input frame rỗng")
         return []
 
     try:
-        _ensure_deepface_ready()
+        _ensure_deepface()
 
-        # DeepFace thường ổn định hơn khi xử lý trên ảnh RGB.
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        orig_h, orig_w = frame.shape[:2]
-        frame_h, frame_w = rgb_frame.shape[:2]
-        scale = 1.0
+        detected = DeepFace.extract_faces(
+            img_path=frame,
+            detector_backend="retinaface",
+            enforce_detection=False,
+            align=True,
+            anti_spoofing=False,
+        )
 
-        # Nếu khung hình quá nhỏ thì upscale để detector dễ bắt mặt hơn.
-        if min(frame_h, frame_w) < 320:
-            scale = 320.0 / float(min(frame_h, frame_w))
-            rgb_frame = cv2.resize(
-                rgb_frame,
-                (int(frame_w * scale), int(frame_h * scale)),
-                interpolation=cv2.INTER_CUBIC,
-            )
+        results: List[Tuple[np.ndarray, Dict]] = []
+        for item in detected:
+            area = item.get("facial_area", {}) if isinstance(item, dict) else {}
+            bbox = _safe_bbox(area, frame.shape)
 
-        detections = []
-        used_backend = "none"
-        for backend in DETECTOR_BACKENDS:
-            try:
-                detections = _run_deepface_detection(rgb_frame, backend)
-                if detections:
-                    used_backend = backend
-                    break
-            except Exception as backend_error:
-                logger.warning(
-                    "DeepFace detect thất bại với backend=%s: %s",
-                    backend,
-                    str(backend_error),
-                )
-
-        faces: List[Tuple[np.ndarray, Dict[str, float]]] = []
-
-        for det in detections:
-            area = det.get("facial_area") or {}
-            x = int(area.get("x", 0))
-            y = int(area.get("y", 0))
-            w = int(area.get("w", 0))
-            h = int(area.get("h", 0))
+            x, y, w, h = bbox["x"], bbox["y"], bbox["w"], bbox["h"]
             if w <= 0 or h <= 0:
                 continue
 
-            confidence = float(det.get("confidence", 0.0))
-            if confidence < MIN_FACE_CONFIDENCE:
+            face_image = frame[y : y + h, x : x + w].copy()
+            if face_image.size == 0:
                 continue
 
-            # Quy đổi bbox từ frame đã resize về frame gốc để khung vẽ bám đúng khuôn mặt.
-            x = int(round(x / scale))
-            y = int(round(y / scale))
-            w = int(round(w / scale))
-            h = int(round(h / scale))
+            bbox["confidence"] = float(item.get("confidence", 0.0)) if isinstance(item, dict) else 0.0
+            results.append((face_image, bbox))
 
-            x = max(0, min(x, orig_w - 1))
-            y = max(0, min(y, orig_h - 1))
-            w = max(1, min(w, orig_w - x))
-            h = max(1, min(h, orig_h - y))
-
-            # Loại box bất thường quá lớn thường đến từ false detection.
-            area_ratio = float(w * h) / float(max(1, orig_w * orig_h))
-            if area_ratio > 0.90:
-                continue
-
-            cropped_face = frame[y:y + h, x:x + w]
-            if cropped_face is None or cropped_face.size == 0:
-                continue
-
-            cropped_face = cv2.resize(cropped_face, (160, 160))
-            bbox = {
-                "x": x,
-                "y": y,
-                "w": w,
-                "h": h,
-                "confidence": confidence,
-            }
-            faces.append((cropped_face, bbox))
-
-        logger.debug("Detect faces: tim thay %d khuon mat (backend=%s)", len(faces), used_backend)
-        return faces
+        results.sort(key=lambda item: float(item[1].get("confidence", 0.0)), reverse=True)
+        return results
 
     except Exception as e:
-        logger.error(f"Lỗi khi detect faces: {str(e)}", exc_info=True)
+        logger.error(f"Lỗi detect_faces: {str(e)}", exc_info=True)
         return []
