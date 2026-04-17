@@ -1,5 +1,6 @@
 import numpy as np
 import logging
+from typing import List, Tuple, Optional
 
 logger = logging.getLogger("face-attendance.face_service")
 
@@ -44,9 +45,10 @@ class FaceService:
             return embedding, is_real, spoof_score
         except Exception as e:
             logger.error(f"Lỗi khi extract embedding with liveness: {str(e)}", exc_info=True)
-            # Fallback về embedding bình thường
+            # FAIL-CLOSED: Reject frame khi liveness check lỗi
+            logger.warning("⚠️ Liveness check failed in FaceService - rejecting for safety")
             embedding = self.extract_embedding(face_image)
-            return embedding, True, 0.0
+            return embedding, False, 1.0  # is_real=False để bắt buộc reject
 
     def cosine_similarity(self, emb1, emb2):
         """Tính cosine similarity giữa 2 embedding"""
@@ -56,12 +58,55 @@ class FaceService:
             logger.error(f"Lỗi cosine_similarity: {str(e)}")
             return -1.0
 
-    def recognize(self, embedding, db_embeddings):
+    def recognize(self, embedding, db_embeddings, use_faiss=False):
+        """
+        Nhận diện sinh viên từ embedding.
+        
+        Args:
+            embedding: Query embedding (shape: (512,))
+            db_embeddings: List of (student_id, embedding) tuples
+            use_faiss: If True, use FAISS for faster search (optional)
+        
+        Returns:
+            (student_id, score) hoặc (None, best_score)
+        """
         if not db_embeddings:
             logger.warning("Database embeddings trống!")
             return None, 0.0
 
         try:
+            # Try FAISS if enabled and available
+            if use_faiss:
+                try:
+                    from backend.services.faiss_search import FAISSEmbeddingIndex
+                    
+                    # Create temporary index for this search
+                    # (In production, this would be shared/cached)
+                    faiss_index = FAISSEmbeddingIndex(dim=512)
+                    faiss_index.build(db_embeddings)
+                    
+                    student_id, score = faiss_index.search(
+                        embedding,
+                        top_k=1,
+                        threshold=self.threshold
+                    )
+                    
+                    if student_id:
+                        logger.info(
+                            f"✅ Nhận diện thành công (FAISS) - "
+                            f"Student ID: {student_id} | Score: {score:.4f}"
+                        )
+                        return student_id, score
+                    else:
+                        logger.info(f"❌ Không khớp đủ ngưỡng - Best score: {score:.4f}")
+                        return None, score
+                
+                except Exception as e:
+                    logger.warning(f"FAISS search failed, fallback to loop: {str(e)}")
+                    # Fallback to loop cosine
+                    pass
+            
+            # Fallback: Loop cosine similarity (original method)
             best_score = -1.0
             best_match = None
 
@@ -72,7 +117,10 @@ class FaceService:
                     best_match = student_id
 
             if best_score >= self.threshold:
-                logger.info(f"✅ Nhận diện thành công - Student ID: {best_match} | Score: {best_score:.4f}")
+                logger.info(
+                    f"✅ Nhận diện thành công - "
+                    f"Student ID: {best_match} | Score: {best_score:.4f}"
+                )
                 return best_match, best_score
             else:
                 logger.info(f"❌ Không khớp đủ ngưỡng - Best score: {best_score:.4f}")

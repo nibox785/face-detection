@@ -11,7 +11,9 @@ function LoginPanel() {
   const [error, setError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  async function handleLogin() {
+  async function handleLogin(event) {
+    event.preventDefault();
+
     if (!username.trim() || !password.trim()) {
       setMessage('Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu');
       setError(true);
@@ -39,7 +41,7 @@ function LoginPanel() {
 
       const data = await response.json();
       
-      login(data.data.access_token);   // Sử dụng login từ AuthContext
+      login(data.data.access_token);
       
       setMessage('Đăng nhập thành công');
       setError(false);
@@ -56,36 +58,47 @@ function LoginPanel() {
   return (
     <div className="login-shell">
       <div className="login-card">
-        <h2>Đăng nhập Admin</h2>
-        
-        <label>
-          Tên đăng nhập
-          <input 
-            value={username} 
-            onChange={(e) => setUsername(e.target.value)} 
-            placeholder="admin" 
-            disabled={isLoading}
-          />
-        </label>
+        <div className="login-hero">
+          <h2>Face Attendance</h2>
+          <p>Đăng nhập quản trị để truy cập hệ thống điểm danh.</p>
+        </div>
 
-        <label>
-          Mật khẩu
-          <input 
-            type="password" 
-            value={password} 
-            onChange={(e) => setPassword(e.target.value)} 
-            placeholder="********" 
-            disabled={isLoading}
-          />
-        </label>
+        <form className="login-form" onSubmit={handleLogin}>
+          <label>
+            Tên đăng nhập
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Nhập tài khoản admin"
+              autoComplete="username"
+              disabled={isLoading}
+            />
+          </label>
 
-        <button 
-          className="btn btn-primary" 
-          onClick={handleLogin}
-          disabled={isLoading}
-        >
-          {isLoading ? 'Đang đăng nhập...' : 'Đăng nhập'}
-        </button>
+          <label>
+            Mật khẩu
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Nhập mật khẩu"
+              autoComplete="current-password"
+              disabled={isLoading}
+            />
+          </label>
+
+          <button
+            className="btn btn-primary login-submit"
+            type="submit"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+          </button>
+        </form>
+
+        <p className="login-note">
+          Phiên đăng nhập chỉ tồn tại trong phiên làm việc hiện tại. Đóng ứng dụng sẽ tự đăng xuất.
+        </p>
 
         {message && (
           <div className={error ? 'message error' : 'message success'}>

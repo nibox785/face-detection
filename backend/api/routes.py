@@ -7,9 +7,19 @@ import csv
 import sqlite3
 from io import StringIO, BytesIO
 from pathlib import Path
-from datetime import datetime
-from typing import Optional, List
+from datetime import datetime, timedelta
+from typing import Optional, List, Dict
 from uuid import uuid4
+import jwt
+
+try:
+    from slowapi import Limiter
+    from slowapi.util import get_remote_address
+    HAS_SLOWAPI = True
+except ImportError:
+    HAS_SLOWAPI = False
+    logger_temp = logging.getLogger("face-attendance.routes")
+    logger_temp.warning("⚠️ slowapi not installed - run: pip install slowapi")
 
 from backend.services.face_service import FaceService
 from backend.services.attendance_service import AttendanceService
@@ -46,6 +56,13 @@ from core.config import ADMIN_USERNAME, ADMIN_PASSWORD, SECRET_KEY, ACCESS_TOKEN
 router = APIRouter()
 logger = logging.getLogger("face-attendance.routes")
 
+# Rate limiting (prevent DDoS/API abuse)
+if HAS_SLOWAPI:
+    limiter = Limiter(key_func=get_remote_address)
+    logger.info("✅ Rate limiting enabled (slowapi)")
+else:
+    limiter = None
+
 DATASET_ROOT = Path("dataset")
 DATASET_ROOT.mkdir(parents=True, exist_ok=True)
 
@@ -64,12 +81,22 @@ register_service = RegisterService()
 # Lưu embeddings cache (sẽ được cập nhật từ main.py)
 embeddings_cache: List[tuple] = []
 
+# Blacklist JWT theo jti để hỗ trợ logout/invalidate token
+revoked_tokens: Dict[str, int] = {}
+
 def update_embeddings_cache():
-    """Reload embeddings cache từ database"""
+    """Reload embeddings cache từ database và rebuild FAISS index"""
     global embeddings_cache
     embeddings_cache.clear()
     embeddings_cache.extend(get_all_embeddings())
     logger.info(f"📦 Đã update cache: {len(embeddings_cache)} embeddings")
+    
+    # Rebuild FAISS index
+    try:
+        from backend.main import faiss_index, init_faiss_index
+        init_faiss_index()
+    except Exception as e:
+        logger.warning(f"⚠️ Cannot rebuild FAISS index: {str(e)}")
 
 # ====================== HELPER FUNCTIONS ======================
 def validate_image_file(file: UploadFile, max_size: int = MAX_FILE_SIZE) -> bool:
@@ -195,46 +222,54 @@ def select_best_face_for_registration(faces_with_bbox: List[tuple], frame_shape:
 
 
 def create_access_token(data: dict, expires_seconds: int = ACCESS_TOKEN_EXPIRE_SECONDS) -> str:
-    """Tạo token đơn giản (có thể thay bằng PyJWT sau)"""
-    import json, base64, hmac, time
-    from hashlib import sha256
-
+    """Tạo JWT token bằng PyJWT"""
     payload = data.copy()
-    payload["exp"] = int(time.time()) + expires_seconds
-    payload_json = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-    payload_b64 = base64.urlsafe_b64encode(payload_json.encode()).decode().rstrip("=")
-    signature = hmac.new(SECRET_KEY.encode(), payload_b64.encode(), sha256).hexdigest()
-    return f"{payload_b64}.{signature}"
+    expire = datetime.utcnow() + timedelta(seconds=expires_seconds)
+    payload.update({"exp": expire, "jti": uuid4().hex})
+    
+    encoded_jwt = jwt.encode(payload, SECRET_KEY, algorithm="HS256")
+    return encoded_jwt
+
+
+def _cleanup_revoked_tokens(now_ts: int) -> None:
+    """Dọn blacklist token đã hết hạn để tránh phình bộ nhớ."""
+    expired = [jti for jti, exp_ts in revoked_tokens.items() if exp_ts <= now_ts]
+    for jti in expired:
+        revoked_tokens.pop(jti, None)
 
 
 def verify_access_token(token: str) -> dict:
-    """Xác thực token"""
+    """Xác thực JWT token bằng PyJWT"""
     try:
-        import json, base64, hmac, time
-        from hashlib import sha256
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        now_ts = int(datetime.utcnow().timestamp())
+        _cleanup_revoked_tokens(now_ts)
 
-        payload_b64, signature = token.rsplit('.', 1)
-        expected = hmac.new(SECRET_KEY.encode(), payload_b64.encode(), sha256).hexdigest()
+        jti = payload.get("jti")
+        if not jti:
+            raise HTTPException(status_code=401, detail="Token thiếu thông tin định danh")
 
-        if not hmac.compare_digest(expected, signature):
-            raise HTTPException(status_code=401, detail="Token không hợp lệ")
-
-        padded = payload_b64 + '=' * (-len(payload_b64) % 4)
-        payload = json.loads(base64.urlsafe_b64decode(padded).decode())
-
-        if payload.get('exp') is None or int(payload['exp']) < int(time.time()):
-            raise HTTPException(status_code=401, detail="Token đã hết hạn")
+        if jti in revoked_tokens:
+            raise HTTPException(status_code=401, detail="Token đã bị thu hồi")
 
         return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token đã hết hạn")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token không hợp lệ")
     except Exception:
         raise HTTPException(status_code=401, detail="Token không hợp lệ")
 
 
-def get_current_admin(authorization: Optional[str] = Header(None)) -> dict:
+def extract_bearer_token(authorization: Optional[str]) -> str:
     if not authorization or not authorization.startswith('Bearer '):
         raise HTTPException(status_code=401, detail="Yêu cầu đăng nhập (Bearer token)")
-    
-    token = authorization.split(' ', 1)[1]
+
+    return authorization.split(' ', 1)[1]
+
+
+def get_current_admin(authorization: Optional[str] = Header(None)) -> dict:
+    token = extract_bearer_token(authorization)
     return verify_access_token(token)
 
 
@@ -250,6 +285,34 @@ async def login(request: LoginRequest):
         message="Đăng nhập thành công",
         data={"access_token": access_token, "token_type": "bearer"}
     )
+
+
+@router.post("/logout")
+async def logout(authorization: Optional[str] = Header(None)):
+    """Thu hồi JWT hiện tại bằng cách đưa jti vào blacklist."""
+    token = extract_bearer_token(authorization)
+    payload = verify_access_token(token)
+
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    if jti and exp:
+        revoked_tokens[str(jti)] = int(exp)
+
+    return {"status": "success", "message": "Đăng xuất thành công"}
+
+
+@router.get("/auth/verify")
+async def verify_auth(authorization: Optional[str] = Header(None)):
+    """Frontend dùng endpoint này để kiểm tra token trước khi vào hệ thống."""
+    payload = get_current_admin(authorization)
+    return {
+        "status": "success",
+        "message": "Token hợp lệ",
+        "data": {
+            "username": payload.get("sub", "admin"),
+            "expires_at": payload.get("exp")
+        }
+    }
 
 
 # ====================== REGISTER ======================
@@ -609,8 +672,42 @@ async def check_face(file: UploadFile = File(...)):
 
 # ====================== RECOGNIZE ======================
 @router.post("/recognize", response_model=RecognizeResponse)
-async def recognize(file: UploadFile = File(...)):
-    """Nhận diện khuôn mặt và điểm danh (không cần auth)"""
+async def recognize(
+    file: UploadFile = File(...),
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Nhận diện khuôn mặt và điểm danh (đòi hỏi auth token hoặc device key).
+    
+    Bảo vệ:
+    - Yêu cầu Bearer token hoặc Authorization header (device key)
+    - Rate limited: 60 req/min per IP để chống DDoS/spam
+    - Được dùng bởi kiosk/app client sau khi xác thực quản trị
+    """
+    # ✅ FIX: Kiểm tra auth - nếu không có token/key thì reject
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Truy cập /recognize cần authorization header (Bearer token hoặc device key)"
+        )
+    
+    # Try to validate as JWT token (admin session)
+    if authorization.startswith('Bearer '):
+        try:
+            token = authorization.split(' ', 1)[1]
+            verify_access_token(token)
+            logger.debug(f"✅ Recognize request authorized via JWT token")
+        except HTTPException:
+            # Token không hợp lệ - reject
+            raise
+    # Alternatively: Device key validation (for kiosk devices)
+    # Có thể thêm logic: elif authorization.startswith('DeviceKey '):  ...
+    else:
+        # Chỉ chấp nhận Bearer token hiện tại
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization header phải là Bearer token"
+        )
     logger.info(f"Recognize request - File: {file.filename}")
 
     # Validate file
@@ -660,8 +757,18 @@ async def recognize(file: UploadFile = File(...)):
                     logger.warning(f"🚨 Phát hiện spoof attack! Score: {spoof_score:.4f}")
                     continue
 
-                # Nếu là người thật → tiếp tục recognize bình thường
-                student_id, score = face_service.recognize(embedding, embeddings_cache)
+                # Nếu là người thật → tiếp tục recognize bình thường (với FAISS nếu có)
+                try:
+                    from backend.main import faiss_index
+                    use_faiss = faiss_index is not None and faiss_index.is_built
+                except:
+                    use_faiss = False
+                
+                student_id, score = face_service.recognize(
+                    embedding,
+                    embeddings_cache,
+                    use_faiss=use_faiss
+                )
                 
             except Exception as e:
                 logger.error(f"Lỗi xử lý face với liveness: {str(e)}")

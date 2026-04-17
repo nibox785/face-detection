@@ -1,16 +1,57 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import { setToken, getToken, clearToken } from '../api/apiClient';
+import {
+  setToken,
+  getToken,
+  clearToken,
+  verifyAuthToken,
+  apiLogout,
+  bestEffortLogoutOnClose,
+} from '../api/apiClient';
 
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
-  const [token, setTokenState] = useState(getToken());
+  const [token, setTokenState] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Khởi tạo token từ localStorage
-    setTokenState(getToken());
-    setIsLoading(false);
+    let isMounted = true;
+
+    async function bootstrapAuth() {
+      const existingToken = getToken();
+      if (!existingToken) {
+        if (isMounted) setIsLoading(false);
+        return;
+      }
+
+      const isValid = await verifyAuthToken();
+      if (isMounted) {
+        if (isValid) {
+          setTokenState(existingToken);
+        } else {
+          clearToken();
+          setTokenState(null);
+        }
+        setIsLoading(false);
+      }
+    }
+
+    bootstrapAuth();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      bestEffortLogoutOnClose(getToken());
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
   }, []);
 
   const login = (newToken) => {
@@ -18,8 +59,8 @@ export function AuthProvider({ children }) {
     setTokenState(newToken);
   };
 
-  const logout = () => {
-    clearToken();
+  const logout = async () => {
+    await apiLogout();
     setTokenState(null);
   };
 

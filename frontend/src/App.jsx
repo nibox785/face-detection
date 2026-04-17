@@ -50,8 +50,8 @@ function App() {
     }
   }
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     setActiveTab('register');
   };
 

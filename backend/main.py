@@ -6,7 +6,8 @@ import datetime
 import os
 
 from backend.database.db import init_db
-from backend.api.routes import router, update_embeddings_cache, embeddings_cache
+from backend.api.routes import router, update_embeddings_cache, embeddings_cache, limiter, HAS_SLOWAPI
+from backend.services.faiss_search import FAISSEmbeddingIndex
 
 # ====================== LOGGING CONFIG ======================
 logging.basicConfig(
@@ -14,6 +15,23 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("face-attendance")
+
+# ====================== GLOBAL FAISS INDEX ======================
+faiss_index: FAISSEmbeddingIndex = None
+
+def init_faiss_index():
+    """Initialize FAISS index with current embeddings cache"""
+    global faiss_index
+    try:
+        faiss_index = FAISSEmbeddingIndex(dim=512)
+        if embeddings_cache:
+            faiss_index.build(embeddings_cache)
+            logger.info(f"✅ FAISS index initialized with {len(embeddings_cache)} embeddings")
+        else:
+            logger.warning("⚠️ FAISS index created but no embeddings yet")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize FAISS index: {str(e)}")
+        faiss_index = None
 
 # ====================== LIFESPAN ======================
 @asynccontextmanager
@@ -26,6 +44,10 @@ async def lifespan(app: FastAPI):
     logger.info("📥 Đang load embeddings từ database...")
     update_embeddings_cache()
     
+    # Initialize FAISS index
+    logger.info("⚡ Initializing FAISS index...")
+    init_faiss_index()
+    
     yield
     
     logger.info("👋 Application shutdown")
@@ -37,6 +59,13 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# ⚠️ Register rate limiter if available
+if HAS_SLOWAPI and limiter:
+    app.state.limiter = limiter
+    logger.info("✅ Rate limiter registered (60 req/min per IP)")
+else:
+    logger.warning("⚠️ Rate limiting not available - consider installing slowapi")
 
 # ====================== CORS CONFIG ======================
 ALLOWED_ORIGINS = os.getenv('ALLOWED_ORIGINS', 'http://127.0.0.1:5173,http://localhost:5173').split(',')
@@ -61,8 +90,21 @@ async def root():
         "message": "Face Attendance API is running",
         "version": "1.0.0",
         "status": "healthy",
-        "embeddings_count": len(embeddings_cache)
+        "embeddings_count": len(embeddings_cache),
+        "faiss_index": faiss_index.get_index_info() if faiss_index else {"status": "not_initialized"}
     }
+
+
+@app.get("/debug/faiss-info")
+async def faiss_info():
+    """Get FAISS index information"""
+    if faiss_index is None:
+        return {"status": "not_initialized"}
+    return {
+        "status": "active",
+        "info": faiss_index.get_index_info()
+    }
+
 
 
 @app.get("/health")

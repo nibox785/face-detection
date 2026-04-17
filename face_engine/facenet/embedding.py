@@ -48,7 +48,7 @@ def get_embedding(face_image: np.ndarray):
         raise
 
 
-# ====================== HÀM MỚI: LIVENESS DETECTION ======================
+# ====================== LIVENESS DETECTION ======================
 def get_embedding_with_liveness(face_image: np.ndarray):
     """
     Trích xuất embedding + kiểm tra liveness (anti-spoofing)
@@ -90,6 +90,8 @@ def get_embedding_with_liveness(face_image: np.ndarray):
 
     except Exception as e:
         logger.error(f"Lỗi get_embedding_with_liveness: {str(e)}", exc_info=True)
-        # Fallback nếu anti_spoofing lỗi
+        # FAIL-CLOSED: Reject frame khi liveness check lỗi (anti-spoofing bảo vệ an niệm)
+        logger.warning("⚠️ Liveness detection failed - rejecting frame for security")
+        # Trả embedding dummy + is_real=False để reject
         embedding = get_embedding(face_image)
-        return embedding, True, 0.0
+        return embedding, False, 1.0  # is_real=False để bắt buộc reject
