@@ -74,6 +74,9 @@ class TestFAISSEmbeddingIndex:
         
         assert len(results) == 3
         assert all(isinstance(r, tuple) for r in results)
+        assert results[0][0] == self.embeddings[0][0]
+        assert results[1][0] == self.embeddings[1][0]
+        assert results[2][0] == self.embeddings[2][0]
     
     def test_empty_embeddings(self):
         """Test with empty embeddings"""

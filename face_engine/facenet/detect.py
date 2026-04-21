@@ -9,6 +9,7 @@ except ImportError:
     DeepFace = None
 
 logger = logging.getLogger("face-attendance.face_engine.detect")
+MIN_FACE_CONFIDENCE = 0.7
 
 
 def _ensure_deepface() -> None:
@@ -67,6 +68,8 @@ def detect_faces(frame: np.ndarray) -> List[Tuple[np.ndarray, Dict]]:
                 continue
 
             bbox["confidence"] = float(item.get("confidence", 0.0)) if isinstance(item, dict) else 0.0
+            if bbox["confidence"] < MIN_FACE_CONFIDENCE:
+                continue
             results.append((face_image, bbox))
 
         results.sort(key=lambda item: float(item[1].get("confidence", 0.0)), reverse=True)

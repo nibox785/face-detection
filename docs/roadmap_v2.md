@@ -4,9 +4,89 @@
 - Chuyển từ bản prototype (mock AI) sang hệ thống nhận diện thật với FaceNet + MTCNN.
 - Ổn định backend, chuẩn hóa frontend và hoàn thiện demo đồ án.
 
+## Sprint ưu tiên theo mức độ nghiêm trọng
+
+### Sprint P0 - An toàn vận hành và nhất quán dữ liệu (cao nhất, làm trước)
+Mục tiêu:
+- Tránh lỗi gây gián đoạn vận hành và giảm rủi ro dữ liệu/auth.
+
+Trạng thái:
+- ✅ Đã triển khai.
+
+Phạm vi:
+- Chuẩn hóa toàn bộ truy cập SQLite qua lớp database chung, không mở kết nối trực tiếp trong route.
+- Chuyển blacklist token từ in-memory sang lưu bền (SQLite) để logout không mất hiệu lực khi restart.
+- Hoàn tất cleanup delete flow chỉ dựa trên foreign key cascade, kiểm tra toàn bộ endpoint liên quan.
+
+Kết quả triển khai:
+- Routes quản trị đã bỏ cập nhật SQLite trực tiếp, dùng hàm database chung.
+- Revoked token được lưu bền trong bảng `revoked_tokens` và có cơ chế dọn token hết hạn.
+- Luồng xóa sinh viên tiếp tục dựa trên `ON DELETE CASCADE` với `PRAGMA foreign_keys = ON`.
+
+Điều kiện hoàn thành:
+- Không còn thao tác SQLite trực tiếp trong API route chính.
+- Logout vẫn có hiệu lực sau khi restart backend.
+- Bộ test xóa sinh viên xác nhận attendance/embeddings được xóa đúng qua cascade.
+
+---
+
+### Sprint P1 - Chất lượng API và độ tin cậy kiểm thử
+Mục tiêu:
+- Giảm regression khi thay đổi logic nhận diện/đăng ký.
+
+Trạng thái:
+- 🔄 Đang triển khai.
+
+Phạm vi:
+- Bổ sung test API cho login, auth verify, register, recognize, delete student.
+- Bổ sung test migration embedding (blob nhị phân mới + dữ liệu pickle cũ).
+- Thiết lập test dependency và lệnh chạy test chuẩn cho team.
+
+Tiến độ hiện tại:
+- ✅ Đã thêm test API core cho auth/login/logout, register (stub), recognize (stub), update/delete student.
+- ✅ Đã mở rộng test nhánh lỗi quan trọng: login sai mật khẩu, thiếu Bearer token, header auth sai format, file không phải ảnh, MSSV trùng.
+- ✅ Đã bổ sung test cho endpoint rủi ro cao: `dataset/register-multiple` (success + insufficient images) và `face/liveness-check` (success + no-face).
+- ✅ Đã thêm test tương thích embedding cho format mới và dữ liệu pickle cũ.
+- ✅ Đã thêm `requirements-dev.txt` cho môi trường test.
+- ✅ Đã giảm warning deprecation từ test client bằng cách ghim `httpx==0.26.0` trong môi trường test.
+
+Điều kiện hoàn thành:
+- Test backend mức core chạy pass trong môi trường chuẩn.
+- Tối thiểu có coverage cho các endpoint quan trọng và backward compatibility.
+
+---
+
+### Sprint P2 - Hiệu năng và chất lượng nhận diện
+Mục tiêu:
+- Tăng tốc nhận diện và ổn định độ chính xác khi demo thực tế.
+
+Trạng thái:
+- 🔄 Đang triển khai.
+
+Phạm vi:
+- Tối ưu batch FAISS thực sự cho nhiều query cùng lúc.
+- Warm-up model detect/embedding khi startup để giảm latency request đầu.
+- Chuẩn hóa benchmark threshold và theo dõi false positive/false negative.
+
+Tiến độ hiện tại:
+- ✅ Đã tối ưu `search_batch` để dùng truy vấn FAISS theo lô (không lặp từng query như trước).
+- ✅ Đã bổ sung warm-up model detect/embedding khi startup, có cờ `MODEL_WARMUP_ENABLED` và tự skip khi chạy test.
+- ✅ Đã bổ sung script benchmark độ trễ recognize before/after: loop vs FAISS single vs FAISS batch.
+- ✅ Đã nâng cấp script benchmark threshold để xuất báo cáo JSON và top-5 threshold.
+- 🔄 Chờ chạy benchmark thực tế trên dataset/thiết bị mục tiêu để chốt threshold cuối cùng.
+
+Điều kiện hoàn thành:
+- Thời gian phản hồi recognize ổn định hơn ở tải demo.
+- Có báo cáo benchmark trước/sau và ngưỡng được ghi nhận rõ trong tài liệu.
+
 ## Phase 0 - Đánh giá hiện trạng (1-2 ngày)
 ### Mục tiêu
 - Chốt những phần đã xong và phần còn thiếu.
+
+### Ưu tiên hotfix hiện tại
+- Sửa `/health` để không crash do import `datetime` sai.
+- Tái sử dụng FAISS index dùng chung thay vì build lại mỗi request.
+- Ưu tiên nhận diện/đăng ký theo MSSV để tránh trùng tên.
 
 ### Việc cần làm
 - Rà soát toàn bộ API đang dùng ở frontend/backend.
@@ -49,6 +129,9 @@
 - Tối ưu cache embeddings và cơ chế reload cache.
 - Hoàn thiện auth admin cho toàn bộ endpoint quản trị.
 - Viết test API mức cơ bản (happy path + bad input).
+- Bổ sung unit test cho `_safe_bbox()` và các edge case bbox sát biên ảnh.
+- Hoàn thiện migration dữ liệu embedding sang format nhị phân mới và theo dõi backward compatibility.
+- Dọn các luồng xóa dữ liệu để chỉ giữ một nguồn sự thật là cascade theo foreign key.
 
 ### Deliverables
 - Bộ API ổn định dùng cho frontend.
@@ -128,8 +211,8 @@
 - Token/auth lỗi khi demo: chuẩn hóa xử lý 401 trên frontend.
 
 ## Cột mốc gợi ý (2 tuần)
-- Tuần 1: Phase 0 -> 2.
-- Tuần 2: Phase 3 -> 6.
+- Tuần 1: Sprint P0 -> P1 (song song hoàn thiện Phase 2).
+- Tuần 2: Sprint P2 + Phase 3 -> 6.
 
 ## Định nghĩa hoàn thành (Definition of Done)
 - Register/Recognize/Attendance chạy ổn với model thật.

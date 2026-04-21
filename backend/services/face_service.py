@@ -58,7 +58,7 @@ class FaceService:
             logger.error(f"Lỗi cosine_similarity: {str(e)}")
             return -1.0
 
-    def recognize(self, embedding, db_embeddings, use_faiss=False):
+    def recognize(self, embedding, db_embeddings, use_faiss=False, faiss_index=None):
         """
         Nhận diện sinh viên từ embedding.
         
@@ -76,35 +76,26 @@ class FaceService:
 
         try:
             # Try FAISS if enabled and available
-            if use_faiss:
+            if use_faiss and faiss_index is not None:
                 try:
-                    from backend.services.faiss_search import FAISSEmbeddingIndex
-                    
-                    # Create temporary index for this search
-                    # (In production, this would be shared/cached)
-                    faiss_index = FAISSEmbeddingIndex(dim=512)
-                    faiss_index.build(db_embeddings)
-                    
                     student_id, score = faiss_index.search(
                         embedding,
                         top_k=1,
-                        threshold=self.threshold
+                        threshold=self.threshold,
                     )
-                    
+
                     if student_id:
                         logger.info(
                             f"✅ Nhận diện thành công (FAISS) - "
                             f"Student ID: {student_id} | Score: {score:.4f}"
                         )
                         return student_id, score
-                    else:
-                        logger.info(f"❌ Không khớp đủ ngưỡng - Best score: {score:.4f}")
-                        return None, score
-                
+
+                    logger.info(f"❌ Không khớp đủ ngưỡng - Best score: {score:.4f}")
+                    return None, score
+
                 except Exception as e:
                     logger.warning(f"FAISS search failed, fallback to loop: {str(e)}")
-                    # Fallback to loop cosine
-                    pass
             
             # Fallback: Loop cosine similarity (original method)
             best_score = -1.0

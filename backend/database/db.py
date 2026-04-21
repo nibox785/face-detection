@@ -1,13 +1,17 @@
 import sqlite3
-import pickle
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
+import numpy as np
+
 DB_PATH = "attendance.db"
+EMBEDDING_MAGIC = b"EMB1"
 
 
 def get_connection():
-    return sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 
 def _column_exists(cursor, table_name: str, column_name: str) -> bool:
@@ -63,6 +67,15 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(DATE(timestamp))")
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS revoked_tokens (
+        jti TEXT PRIMARY KEY,
+        exp_ts INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_revoked_tokens_exp ON revoked_tokens(exp_ts)")
+
     conn.commit()
     conn.close()
 
@@ -81,17 +94,33 @@ def get_all_embeddings():
 
     result = []
     for student_id, blob in rows:
-        emb = pickle.loads(blob)
+        emb = _deserialize_embedding(blob)
         result.append((student_id, emb))
 
     return result
+
+
+def _serialize_embedding(embedding) -> bytes:
+    array = np.asarray(embedding, dtype=np.float32)
+    return EMBEDDING_MAGIC + array.tobytes()
+
+
+def _deserialize_embedding(blob: bytes):
+    if blob.startswith(EMBEDDING_MAGIC):
+        array = np.frombuffer(blob[len(EMBEDDING_MAGIC):], dtype=np.float32)
+        return array.copy()
+
+    # Legacy fallback cho dữ liệu cũ lưu bằng pickle.
+    import pickle
+
+    return pickle.loads(blob)
 
 
 def save_embedding(student_id, embedding):
     conn = get_connection()
     cursor = conn.cursor()
 
-    blob = pickle.dumps(embedding)
+    blob = _serialize_embedding(embedding)
 
     cursor.execute(
         "INSERT INTO embeddings (student_id, embedding) VALUES (?, ?)",
@@ -157,17 +186,12 @@ def get_student_by_id(student_id: int) -> Optional[Dict[str, Any]]:
 def delete_student_and_embedding(student_id: int) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
-    
-    # Xóa embedding trước
-    cursor.execute("DELETE FROM embeddings WHERE student_id = ?", (student_id,))
-    # Xóa attendance
-    cursor.execute("DELETE FROM attendance WHERE student_id = ?", (student_id,))
-    # Xóa student
     cursor.execute("DELETE FROM students WHERE id = ?", (student_id,))
     
     conn.commit()
+    deleted = cursor.rowcount > 0
     conn.close()
-    return True
+    return deleted
 
 
 def get_student_by_name(name: str) -> Optional[Dict[str, Any]]:
@@ -226,6 +250,47 @@ def update_student_mssv(student_id: int, mssv: Optional[str]) -> None:
     )
     conn.commit()
     conn.close()
+
+
+def update_student_name(student_id: int, name: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE students SET name = ? WHERE id = ?",
+        (name.strip(), student_id)
+    )
+    conn.commit()
+    updated = cursor.rowcount > 0
+    conn.close()
+    return updated
+
+
+def revoke_token(jti: str, exp_ts: int) -> None:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT OR REPLACE INTO revoked_tokens (jti, exp_ts) VALUES (?, ?)",
+        (str(jti), int(exp_ts))
+    )
+    conn.commit()
+    conn.close()
+
+
+def cleanup_revoked_tokens(now_ts: int) -> None:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM revoked_tokens WHERE exp_ts <= ?", (int(now_ts),))
+    conn.commit()
+    conn.close()
+
+
+def is_token_revoked(jti: str) -> bool:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM revoked_tokens WHERE jti = ? LIMIT 1", (str(jti),))
+    found = cursor.fetchone() is not None
+    conn.close()
+    return found
 
 
 # ===============================

@@ -2,8 +2,9 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import datetime
+from datetime import datetime
 import os
+import numpy as np
 
 from backend.database.db import init_db
 from backend.api.routes import router, update_embeddings_cache, embeddings_cache, limiter, HAS_SLOWAPI
@@ -18,6 +19,33 @@ logger = logging.getLogger("face-attendance")
 
 # ====================== GLOBAL FAISS INDEX ======================
 faiss_index: FAISSEmbeddingIndex = None
+
+
+def warmup_ai_models():
+    """Warm up detect/embedding models to reduce first-request latency."""
+    enabled = os.getenv("MODEL_WARMUP_ENABLED", "1").strip() in {"1", "true", "True"}
+    if not enabled:
+        logger.info("⏭️ MODEL_WARMUP_ENABLED=0 -> skip model warm-up")
+        return
+
+    # Keep test runs fast and deterministic.
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        logger.info("⏭️ Pytest detected -> skip model warm-up")
+        return
+
+    try:
+        logger.info("🔥 Warming up AI models (detect + embedding)...")
+        from face_engine.facenet.detect import detect_faces
+        from face_engine.facenet.embedding import get_embedding
+
+        dummy_frame = np.zeros((160, 160, 3), dtype=np.uint8)
+        detect_faces(dummy_frame)
+
+        dummy_face = np.full((160, 160, 3), 127, dtype=np.uint8)
+        get_embedding(dummy_face)
+        logger.info("✅ AI model warm-up completed")
+    except Exception as e:
+        logger.warning(f"⚠️ AI model warm-up skipped due to error: {str(e)}")
 
 def init_faiss_index():
     """Initialize FAISS index with current embeddings cache"""
@@ -47,6 +75,9 @@ async def lifespan(app: FastAPI):
     # Initialize FAISS index
     logger.info("⚡ Initializing FAISS index...")
     init_faiss_index()
+
+    # Warm up AI models to avoid cold-start latency on first request
+    warmup_ai_models()
     
     yield
     

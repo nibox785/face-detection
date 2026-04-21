@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '../../api/apiClient';
 import * as XLSX from 'xlsx';  
 
-const RECOGNITION_INTERVAL_MS = 750;
+const RECOGNITION_INTERVAL_MS = 320;
+const OVERLAY_EASING = 0.4;
+const OVERLAY_HOLD_MS = 900;
 
 function AttendancePanel() {
   const videoRef = useRef(null);
@@ -11,6 +13,10 @@ function AttendancePanel() {
   const isProcessingRef = useRef(false);
   const lastRunAtRef = useRef(0);
   const toastTimerRef = useRef(null);
+  const rafIdRef = useRef(null);
+  const overlayTargetsRef = useRef([]);
+  const overlayStateRef = useRef([]);
+  const lastOverlayUpdateRef = useRef(0);
 
   const [isRunning, setIsRunning] = useState(false);
   const [log, setLog] = useState([]);
@@ -82,10 +88,29 @@ function AttendancePanel() {
     }, 2200);
   }, []);
 
-  function drawBoundingBoxes(results) {
+  function setOverlayTargets(results) {
+    const normalizedTargets = (results || [])
+      .filter(result => result?.bbox)
+      .map(result => {
+        const { x = 0, y = 0, w = 0, h = 0 } = result.bbox || {};
+        return {
+          x,
+          y,
+          w,
+          h,
+          color: result.student_id ? '#00ff00' : '#ffaa00',
+          label: result.name || 'Unknown',
+        };
+      });
+
+    overlayTargetsRef.current = normalizedTargets;
+    lastOverlayUpdateRef.current = Date.now();
+  }
+
+  function drawBoundingBoxes() {
     const canvas = drawCanvasRef.current;
     const video = videoRef.current;
-    if (!canvas || !results || !video) return;
+    if (!canvas || !video) return;
 
     const width = video.videoWidth || 640;
     const height = video.videoHeight || 480;
@@ -95,21 +120,48 @@ function AttendancePanel() {
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    results.forEach(result => {
-      if (!result.bbox) return;
-      const { x, y, w, h } = result.bbox;
-      const color = result.student_id ? '#00ff00' : '#ffaa00';
+    const now = Date.now();
+    const hasFreshTargets = now - lastOverlayUpdateRef.current <= OVERLAY_HOLD_MS;
+    const targets = hasFreshTargets ? overlayTargetsRef.current : [];
+    const states = overlayStateRef.current;
 
-      ctx.strokeStyle = color;
+    if (!targets.length) {
+      overlayStateRef.current = [];
+      return;
+    }
+
+    if (states.length > targets.length) {
+      states.length = targets.length;
+    }
+
+    targets.forEach((target, idx) => {
+      const current = states[idx] || { ...target };
+
+      current.x += (target.x - current.x) * OVERLAY_EASING;
+      current.y += (target.y - current.y) * OVERLAY_EASING;
+      current.w += (target.w - current.w) * OVERLAY_EASING;
+      current.h += (target.h - current.h) * OVERLAY_EASING;
+      current.color = target.color;
+      current.label = target.label;
+
+      states[idx] = current;
+
+      ctx.strokeStyle = current.color;
       ctx.lineWidth = 4;
-      ctx.strokeRect(x, y, w, h);
+      ctx.strokeRect(current.x, current.y, current.w, current.h);
 
-      const label = result.name || `Unknown`;
-      ctx.fillStyle = color;
+      ctx.fillStyle = current.color;
       ctx.font = 'bold 18px Arial';
-      ctx.fillText(label, x, y - 10);
+      const labelY = Math.max(18, current.y - 10);
+      ctx.fillText(current.label, current.x, labelY);
     });
   }
+
+  const drawLoop = useCallback(() => {
+    if (!isRunning) return;
+    drawBoundingBoxes();
+    rafIdRef.current = requestAnimationFrame(drawLoop);
+  }, [isRunning]);
 
   const processRecognition = useCallback(async () => {
     if (!isRunning) return;
@@ -140,7 +192,7 @@ function AttendancePanel() {
       const json = await res.json();
       const results = Array.isArray(json?.data) ? json.data : [];
 
-      drawBoundingBoxes(results);
+      setOverlayTargets(results);
 
       results.forEach(result => {
         const { student_id, name, score } = result;
@@ -199,6 +251,25 @@ function AttendancePanel() {
     return () => clearInterval(timer);
   }, [isRunning, processRecognition]);
 
+  // Draw loop chạy riêng để overlay luôn mượt, không phụ thuộc nhịp gọi API
+  useEffect(() => {
+    if (!isRunning) {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      return undefined;
+    }
+
+    rafIdRef.current = requestAnimationFrame(drawLoop);
+    return () => {
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+  }, [isRunning, drawLoop]);
+
   // ==================== TOGGLE BẮT ĐẦU / DỪNG ====================
   async function toggleAttendance() {
     if (!isRunning) {
@@ -210,10 +281,16 @@ function AttendancePanel() {
       setSessionAttendance(new Map());
       setToast(null);
       lastRunAtRef.current = 0;
+      overlayTargetsRef.current = [];
+      overlayStateRef.current = [];
+      lastOverlayUpdateRef.current = 0;
     } else {
       setIsRunning(false);
       if (stream) stream.getTracks().forEach(t => t.stop());
       setStream(null);
+      overlayTargetsRef.current = [];
+      overlayStateRef.current = [];
+      lastOverlayUpdateRef.current = 0;
 
       const drawCanvas = drawCanvasRef.current;
       if (drawCanvas) {

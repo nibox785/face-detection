@@ -88,13 +88,53 @@ face-detection/
 - `backend/database/schemas.py`: schema response API.
 - `core/config.py`: cấu hình admin login và SECRET_KEY.
 
+## Ghi chú kỹ thuật hiện tại
+- Health check đã được sửa để không crash do import `datetime` sai.
+- Nhận diện ưu tiên dùng FAISS index dùng chung thay vì build lại mỗi request.
+- Khi đăng ký sinh viên, hệ thống ưu tiên kiểm tra theo MSSV để tránh gộp nhầm sinh viên trùng tên.
+- Face detection đang lọc các bbox có confidence thấp để giảm ảnh nhiễu.
+- Blacklist token đã chuyển sang lưu bền trong SQLite (`revoked_tokens`), không còn phụ thuộc bộ nhớ RAM.
+- Cập nhật tên sinh viên đã đi qua database layer chung, không thao tác SQLite trực tiếp trong route.
+
+## Thứ tự Sprint ưu tiên
+- Sprint P0 (nghiêm trọng nhất): ổn định auth + nhất quán DB layer + an toàn xóa dữ liệu.
+- Sprint P1: mở rộng test API và test tương thích dữ liệu để giảm regression.
+- Sprint P2: tối ưu hiệu năng nhận diện (FAISS batch thật sự, warm-up model, benchmark threshold).
+
+Chi tiết kế hoạch và điều kiện hoàn thành được mô tả trong docs/roadmap_v2.md.
+
+Tiến độ hiện tại:
+- Sprint P0: ✅ Hoàn thành.
+- Sprint P1: 🔄 Đã mở rộng test API core (happy path + nhánh lỗi auth/validation), thêm coverage cho register-multiple/liveness-check và test tương thích embedding.
+- Warning deprecation từ test client đã được giảm bằng cách dùng `httpx==0.26.0` cho môi trường test.
+- Sprint P2: 🔄 Đã bắt đầu với tối ưu batch FAISS thật sự và warm-up model khi startup để giảm cold-start.
+
+### Benchmark P2 (Latency + Threshold)
+```powershell
+cd d:face-detection
+& .\.venv\Scripts\Activate.ps1
+
+# 1) Benchmark độ trễ recognize: Loop vs FAISS single vs FAISS batch
+python scripts/benchmark_recognize_latency.py --embeddings 1000 --queries 1000 --output benchmarks/p2_latency.json
+
+# 2) Benchmark threshold trên dataset thực tế
+python scripts/benchmark_threshold.py --dataset dataset --start 0.30 --end 0.90 --step 0.01 --output benchmarks/threshold_report.json
+```
+
+Kết quả benchmark sẽ nằm trong thư mục `benchmarks/` để dùng cho quyết định ngưỡng vận hành cuối cùng.
+
 ## Database
 - File DB mặc định: `attendance.db`
 - Bảng chính:
   - `students`: `id`, `name`, `mssv`, `created_at`
   - `embeddings`: `id`, `student_id`, `embedding`
   - `attendance`: `id`, `student_id`, `timestamp`
-- Embedding lưu dưới dạng `BLOB`, serialize bằng `pickle`.
+
+Embedding hiện được lưu dưới dạng `BLOB` nhị phân từ `numpy.float32` thay vì `pickle`.
+
+Lưu ý: dữ liệu cũ lưu bằng `pickle` vẫn được đọc tương thích trong quá trình chuyển đổi.
+
+Xóa sinh viên hiện dựa trên `ON DELETE CASCADE` sau khi bật `PRAGMA foreign_keys = ON`, nên chỉ cần xóa bản ghi trong `students` là hệ thống tự dọn các bảng liên quan.
 
 ## Frontend chi tiết
 - `frontend/src/main.jsx`: render React app với `AuthProvider`.
@@ -113,8 +153,16 @@ cd d:face-detection
 python -m venv .venv
 & .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+pip install -r requirements-dev.txt
 python init_db.py
 uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+### Chạy test backend (Sprint P1)
+```powershell
+cd d:face-detection
+& .\.venv\Scripts\Activate.ps1
+pytest tests/test_api_core.py tests/test_embedding_compat.py tests/test_detect_bbox.py tests/test_faiss.py -q
 ```
 
 ### Frontend

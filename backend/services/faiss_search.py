@@ -178,11 +178,58 @@ class FAISSEmbeddingIndex:
         Returns:
             List of (student_id, similarity) tuples
         """
-        results = []
-        for emb in query_embeddings:
-            result = self.search(emb, top_k, threshold)
-            results.append(result)
-        return results
+        if not query_embeddings:
+            return []
+
+        if not self.is_built or self.index is None:
+            logger.debug("FAISS index not built yet, cannot batch search")
+            return [(None, 0.0) for _ in query_embeddings]
+
+        try:
+            queries = np.asarray(query_embeddings, dtype=np.float32)
+
+            # Handle single query passed accidentally as 1D vector.
+            if queries.ndim == 1:
+                queries = queries.reshape(1, -1)
+
+            if queries.shape[1] != self.dim:
+                raise ValueError(
+                    f"Query dimension mismatch: expected {self.dim}, got {queries.shape[1]}"
+                )
+
+            distances, indices = self.index.search(queries, top_k)
+
+            results: List[Tuple[Optional[int], float]] = []
+            for i in range(queries.shape[0]):
+                idx = int(indices[i][0])
+                if idx < 0 or idx >= len(self.student_ids):
+                    results.append((None, 0.0))
+                    continue
+
+                l2_distance_squared = float(distances[i][0])
+                similarity = 1.0 - (l2_distance_squared / 2.0)
+                similarity = max(0.0, min(1.0, similarity))
+
+                student_id = self.student_ids[idx]
+                if similarity >= threshold:
+                    results.append((student_id, similarity))
+                else:
+                    results.append((None, similarity))
+
+            return results
+
+        except Exception as e:
+            logger.error(f"❌ Error in batch FAISS search: {str(e)}", exc_info=True)
+            return [(None, 0.0) for _ in query_embeddings]
+
+    def batch_search(
+        self,
+        query_embeddings: List[np.ndarray],
+        top_k: int = 1,
+        threshold: float = 0.68
+    ) -> List[Tuple[Optional[int], float]]:
+        """Backward-compatible alias for search_batch()."""
+        return self.search_batch(query_embeddings, top_k=top_k, threshold=threshold)
     
     def get_index_info(self) -> dict:
         """Get information about current FAISS index."""

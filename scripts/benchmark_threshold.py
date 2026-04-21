@@ -1,5 +1,6 @@
 import argparse
 import itertools
+import json
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -100,6 +101,7 @@ def main():
     parser.add_argument("--start", type=float, default=0.30, help="Threshold bắt đầu")
     parser.add_argument("--end", type=float, default=0.90, help="Threshold kết thúc")
     parser.add_argument("--step", type=float, default=0.01, help="Bước threshold")
+    parser.add_argument("--output", default="benchmarks/threshold_report.json", help="File JSON kết quả benchmark")
     args = parser.parse_args()
 
     dataset_dir = Path(args.dataset)
@@ -125,6 +127,7 @@ def main():
         threshold += args.step
 
     best = max(results, key=lambda x: (x["f1"], x["accuracy"]))
+    top5 = sorted(results, key=lambda x: (x["f1"], x["accuracy"]), reverse=True)[:5]
 
     print("\n=== BEST THRESHOLD ===")
     print(f"Threshold: {best['threshold']:.4f}")
@@ -133,6 +136,27 @@ def main():
     print(f"Recall   : {best['recall']:.4f}")
     print(f"F1       : {best['f1']:.4f}")
     print(f"Confusion: TP={best['tp']} FP={best['fp']} TN={best['tn']} FN={best['fn']}")
+
+    print("\n=== TOP 5 THRESHOLDS (F1, Accuracy) ===")
+    for row in top5:
+        print(
+            f"t={row['threshold']:.4f} | F1={row['f1']:.4f} | "
+            f"Acc={row['accuracy']:.4f} | P={row['precision']:.4f} | R={row['recall']:.4f}"
+        )
+
+    report = {
+        "dataset": str(dataset_dir),
+        "students": len(by_student),
+        "positive_pairs": len(positives),
+        "negative_pairs": len(negatives),
+        "best": best,
+        "top5": top5,
+        "range": {"start": args.start, "end": args.end, "step": args.step},
+    }
+    out_path = Path(args.output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    print(f"\nSaved report: {out_path}")
 
 
 if __name__ == "__main__":
