@@ -1,6 +1,6 @@
 import sqlite3
 import pickle
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
 DB_PATH = "attendance.db"
@@ -61,7 +61,7 @@ def init_db():
     # Tạo index để tối ưu query
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_student_id ON embeddings(student_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(DATE(timestamp))")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(DATE(timestamp, 'localtime'))")
 
     conn.commit()
     conn.close()
@@ -109,11 +109,14 @@ def save_embedding(student_id, embedding):
 def insert_attendance(student_id):
     conn = get_connection()
     cursor = conn.cursor()
+    # lấy ngày giờ Việt Nam 
+    vn_time = datetime.utcnow() + timedelta(hours=7)
 
     cursor.execute(
-        "INSERT INTO attendance (student_id) VALUES (?)",
-        (student_id,)
+        "INSERT INTO attendance (student_id, timestamp) VALUES (?, ?)",
+        (student_id, vn_time.strftime("%Y-%m-%d %H:%M:%S"))
     )
+
 
     conn.commit()
     conn.close()
@@ -124,7 +127,11 @@ def check_attendance_today(student_id):
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT COUNT(*) FROM attendance WHERE student_id = ? AND DATE(timestamp) = DATE('now')",
+        """
+        SELECT COUNT(*) FROM attendance 
+        WHERE student_id = ? 
+        AND DATE(timestamp, 'localtime') = DATE('now', '+7 hours')
+        """,
         (student_id,)
     )
 
@@ -258,10 +265,10 @@ def get_attendance_range(start_date: Optional[str] = None, end_date: Optional[st
     params = []
     
     if start_date and end_date:
-        query += " WHERE DATE(a.timestamp) BETWEEN ? AND ?"
+        query += " WHERE DATE(a.timestamp, 'localtime') BETWEEN ? AND ?"
         params = [start_date, end_date]
     elif start_date:
-        query += " WHERE DATE(a.timestamp) >= ?"
+        query += " WHERE DATE(a.timestamp, 'localtime') >= ?"
         params = [start_date]
     
     query += " ORDER BY a.timestamp DESC"

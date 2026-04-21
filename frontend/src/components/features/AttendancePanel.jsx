@@ -24,7 +24,10 @@ function AttendancePanel() {
   // Cleanup camera
   useEffect(() => {
     return () => {
-      if (stream) stream.getTracks().forEach(track => track.stop());
+     if (stream) {
+  stream.getTracks().forEach(track => track.stop());
+  setStream(null);
+}
       if (toastTimerRef.current) {
         clearTimeout(toastTimerRef.current);
       }
@@ -142,18 +145,30 @@ function AttendancePanel() {
 
       drawBoundingBoxes(results);
 
-      results.forEach(result => {
-        const { student_id, name, score } = result;
-        if (!student_id || score < 0.68) return; // ngưỡng an toàn
+      results.forEach(async (result) => {
+  const { student_id, name, score } = result;
+  if (!student_id || score < 0.7) return;
 
-        // Chỉ ghi log 1 lần duy nhất trong phiên
-        if (attendedSet.current.has(student_id)) return;
+  if (attendedSet.current.has(student_id)) return;
 
-        attendedSet.current.add(student_id);
+  attendedSet.current.add(student_id);
 
+  // GỌI API ĐIỂM DANH
+  try {
+    await apiFetch('/attendance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student_id })
+    });
+  } catch (e) {
+    console.error("Attendance API error:", e);
+  }
+        
         const matched = expectedStudents.find(
-          s => s.name?.trim().toLowerCase() === String(name || '').trim().toLowerCase()
-        );
+  s =>
+    (s.mssv && s.mssv === result.mssv) ||
+    s.name?.trim().toLowerCase() === String(name || '').trim().toLowerCase()
+);
         const mssv = matched?.mssv || '';
 
         // Thêm log

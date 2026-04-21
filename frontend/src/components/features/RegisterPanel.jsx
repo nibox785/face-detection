@@ -166,6 +166,8 @@ function RegisterPanel({ onRegisterSuccess }) {
       const formData = new FormData();
       formData.append('name', name.trim());
       if (mssv.trim()) formData.append('mssv', mssv.trim());
+      // chỉ gửi ảnh đầu tiên
+      formData.append('file', capturedFrames[0].blob, 'face.jpg');
       
       capturedFrames.forEach((frame) => {
         const safeStep = frame.stepName
@@ -175,7 +177,7 @@ function RegisterPanel({ onRegisterSuccess }) {
         formData.append('files', frame.blob, `step_${frame.stepNumber}_${safeStep}.jpg`);
       });
 
-      const res = await apiFetch('/dataset/register-multiple', {
+      const res = await apiFetch('/register', {
         method: 'POST',
         body: formData,
       });

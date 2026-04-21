@@ -674,6 +674,7 @@ async def check_face(file: UploadFile = File(...)):
 @router.post("/recognize", response_model=RecognizeResponse)
 async def recognize(
     file: UploadFile = File(...),
+    mark_attendance: bool = Query(True),
     authorization: Optional[str] = Header(None)
 ):
     """
@@ -777,7 +778,8 @@ async def recognize(
             student_name = "Unknown"
 
             if student_id:
-                attendance_service.mark_attendance(student_id)
+                if mark_attendance:
+                    attendance_service.mark_attendance(student_id)
                 student = get_student_by_id(student_id)
                 student_name = student['name'] if student else "Unknown"
                 logger.info(f"Điểm danh thành công - Student ID: {student_id} | Name: {student_name} | Score: {score:.4f}")

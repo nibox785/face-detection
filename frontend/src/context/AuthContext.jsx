@@ -44,15 +44,16 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    const handleBeforeUnload = () => {
-      bestEffortLogoutOnClose(getToken());
-    };
+  const handleBeforeUnload = () => {
+    // ❌ KHÔNG logout khi reload
+    // bestEffortLogoutOnClose(getToken());
+  };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, []);
+  window.addEventListener('beforeunload', handleBeforeUnload);
+  return () => {
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+  };
+}, []);
 
   const login = (newToken) => {
     setToken(newToken);

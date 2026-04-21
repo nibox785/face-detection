@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime, timezone
 import datetime
 import os
 
@@ -112,5 +113,5 @@ async def health_check():
     return {
         "status": "healthy",
         "embeddings_count": len(embeddings_cache),
-        "timestamp": datetime.now().isoformat()
+        "timestamp": datetime.now(timezone.utc).astimezone().isoformat()
     }

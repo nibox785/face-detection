@@ -94,7 +94,7 @@ function App() {
 
       <main className="app-content">
         {activeTab === 'register' && <RegisterPanel onRegisterSuccess={loadStudents} />}
-        {activeTab === 'attendance' && <AttendancePanel />}
+        {activeTab === 'attendance' && <AttendancePanel onSuccess={loadAttendance} />}
         {activeTab === 'students' && (
           <StudentsPanel
             students={students}
