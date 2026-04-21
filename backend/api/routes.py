@@ -4,11 +4,10 @@ import numpy as np
 import cv2
 import logging
 import csv
-import sqlite3
 from io import StringIO, BytesIO
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict
+from typing import Optional, List
 from uuid import uuid4
 import jwt
 
@@ -35,9 +34,12 @@ from backend.database.db import (
     get_attendance_by_student,
     get_all_embeddings,
     create_student,
+    update_student_name,
     update_student_mssv,
     save_embedding,
-    DB_PATH
+    revoke_token,
+    cleanup_revoked_tokens,
+    is_token_revoked,
 )
 from backend.database.schemas import (
     RecognizeResponse,
@@ -80,9 +82,6 @@ register_service = RegisterService()
 # ====================== CACHE ======================
 # Lưu embeddings cache (sẽ được cập nhật từ main.py)
 embeddings_cache: List[tuple] = []
-
-# Blacklist JWT theo jti để hỗ trợ logout/invalidate token
-revoked_tokens: Dict[str, int] = {}
 
 def update_embeddings_cache():
     """Reload embeddings cache từ database và rebuild FAISS index"""
@@ -231,25 +230,18 @@ def create_access_token(data: dict, expires_seconds: int = ACCESS_TOKEN_EXPIRE_S
     return encoded_jwt
 
 
-def _cleanup_revoked_tokens(now_ts: int) -> None:
-    """Dọn blacklist token đã hết hạn để tránh phình bộ nhớ."""
-    expired = [jti for jti, exp_ts in revoked_tokens.items() if exp_ts <= now_ts]
-    for jti in expired:
-        revoked_tokens.pop(jti, None)
-
-
 def verify_access_token(token: str) -> dict:
     """Xác thực JWT token bằng PyJWT"""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         now_ts = int(datetime.utcnow().timestamp())
-        _cleanup_revoked_tokens(now_ts)
+        cleanup_revoked_tokens(now_ts)
 
         jti = payload.get("jti")
         if not jti:
             raise HTTPException(status_code=401, detail="Token thiếu thông tin định danh")
 
-        if jti in revoked_tokens:
+        if is_token_revoked(str(jti)):
             raise HTTPException(status_code=401, detail="Token đã bị thu hồi")
 
         return payload
@@ -289,14 +281,14 @@ async def login(request: LoginRequest):
 
 @router.post("/logout")
 async def logout(authorization: Optional[str] = Header(None)):
-    """Thu hồi JWT hiện tại bằng cách đưa jti vào blacklist."""
+    """Thu hồi JWT hiện tại bằng cách lưu jti vào blacklist bền vững."""
     token = extract_bearer_token(authorization)
     payload = verify_access_token(token)
 
     jti = payload.get("jti")
     exp = payload.get("exp")
     if jti and exp:
-        revoked_tokens[str(jti)] = int(exp)
+        revoke_token(str(jti), int(exp))
 
     return {"status": "success", "message": "Đăng xuất thành công"}
 
@@ -760,15 +752,17 @@ async def recognize(
 
                 # Nếu là người thật → tiếp tục recognize bình thường (với FAISS nếu có)
                 try:
-                    from backend.main import faiss_index
-                    use_faiss = faiss_index is not None and faiss_index.is_built
+                    from backend.main import faiss_index as shared_faiss_index
+                    use_faiss = shared_faiss_index is not None and shared_faiss_index.is_built
                 except:
+                    shared_faiss_index = None
                     use_faiss = False
                 
                 student_id, score = face_service.recognize(
                     embedding,
                     embeddings_cache,
-                    use_faiss=use_faiss
+                    use_faiss=use_faiss,
+                    faiss_index=shared_faiss_index,
                 )
                 
             except Exception as e:
@@ -905,14 +899,9 @@ async def update_student(
     
     # Update logic
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE students SET name = ? WHERE id = ?",
-            (name.strip(), student_id)
-        )
-        conn.commit()
-        conn.close()
+        updated = update_student_name(student_id, name)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Không tìm thấy sinh viên")
         
         logger.info(f"✅ Cập nhật sinh viên ID {student_id} thành công: {name}")
         

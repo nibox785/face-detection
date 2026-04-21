@@ -7,7 +7,8 @@ from io import BytesIO
 from backend.database.db import (
     save_embedding, 
     create_student, 
-    get_student_by_name
+    get_student_by_name,
+    get_student_by_mssv,
 )
 from backend.services.face_service import FaceService
 
@@ -61,9 +62,8 @@ class RegisterService:
             # Trích xuất embedding
             embedding = self.face_service.extract_embedding(face_image)
 
-            # === SỬ DỤNG create_student() để đồng bộ ===
-            # Kiểm tra sinh viên đã tồn tại chưa
-            existing = get_student_by_name(name)
+            # Ưu tiên MSSV để tránh gộp nhầm sinh viên trùng tên.
+            existing = get_student_by_mssv(mssv) if mssv and mssv.strip() else get_student_by_name(name)
             if existing:
                 logger.info(f"Sinh viên '{name}' đã tồn tại (ID: {existing['id']})")
                 return True, f"Sinh viên '{name}' đã tồn tại", existing["id"]

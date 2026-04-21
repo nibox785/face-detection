@@ -69,14 +69,17 @@ function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div>
-          <h1>Face Attendance</h1>
-          <p>Hệ thống điểm danh khuôn mặt</p>
-        </div>
-        <div className="header-actions">
-          <button className="btn btn-secondary" onClick={handleLogout}>
-            Đăng xuất
-          </button>
+        <div className="app-header-top">
+          <div className="app-brand">
+            <h1>Face Attendance</h1>
+            <p>Hệ thống điểm danh khuôn mặt</p>
+          </div>
+
+          <div className="header-actions">
+            <button className="btn btn-ghost" onClick={handleLogout}>
+              Đăng xuất
+            </button>
+          </div>
         </div>
 
         <nav className="tab-bar">
