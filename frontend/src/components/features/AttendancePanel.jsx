@@ -206,15 +206,6 @@ function AttendancePanel() {
   attendedSet.current.add(student_id);
 
   // GỌI API ĐIỂM DANH
-  try {
-    await apiFetch('/attendance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ student_id })
-    });
-  } catch (e) {
-    console.error("Attendance API error:", e);
-  }
         
         const matched = expectedStudents.find(
   s =>

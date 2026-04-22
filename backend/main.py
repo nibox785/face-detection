@@ -2,12 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-<<<<<<< HEAD
 from datetime import datetime, timezone
-import datetime
-=======
-from datetime import datetime
->>>>>>> 9b321e4968c99f488f7cef3ad04a52b68b0efbf2
 import os
 import numpy as np
 

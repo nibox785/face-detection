@@ -1,10 +1,6 @@
 import sqlite3
-<<<<<<< HEAD
 import pickle
 from datetime import datetime, timedelta
-=======
-from datetime import datetime
->>>>>>> 9b321e4968c99f488f7cef3ad04a52b68b0efbf2
 from typing import List, Optional, Dict, Any
 
 import numpy as np
@@ -70,7 +66,7 @@ def init_db():
     # Tạo index để tối ưu query
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_student_id ON embeddings(student_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance(DATE(timestamp, 'localtime'))")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_attendance_timestamp ON attendance(timestamp)")
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS revoked_tokens (
@@ -164,7 +160,7 @@ def check_attendance_today(student_id):
         """
         SELECT COUNT(*) FROM attendance 
         WHERE student_id = ? 
-        AND DATE(timestamp, 'localtime') = DATE('now', '+7 hours')
+        DATE(timestamp) = DATE('now', '+7 hours')
         """,
         (student_id,)
     )

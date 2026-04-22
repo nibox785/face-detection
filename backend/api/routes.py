@@ -72,7 +72,7 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB max file size
 TARGET_REGISTRATION_FRAMES = 10
 MIN_ACCEPTED_REGISTRATION_FRAMES = 4
-QUALITY_SCORE_THRESHOLD = 0.30
+QUALITY_SCORE_THRESHOLD = 0.15
 
 # ====================== SERVICES ======================
 face_service = FaceService(threshold=0.68)
