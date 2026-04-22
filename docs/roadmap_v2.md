@@ -73,7 +73,10 @@ Tiến độ hiện tại:
 - ✅ Đã bổ sung warm-up model detect/embedding khi startup, có cờ `MODEL_WARMUP_ENABLED` và tự skip khi chạy test.
 - ✅ Đã bổ sung script benchmark độ trễ recognize before/after: loop vs FAISS single vs FAISS batch.
 - ✅ Đã nâng cấp script benchmark threshold để xuất báo cáo JSON và top-5 threshold.
-- 🔄 Chờ chạy benchmark thực tế trên dataset/thiết bị mục tiêu để chốt threshold cuối cùng.
+- ✅ Đã chạy benchmark P2 và lưu báo cáo:
+	- `benchmarks/p2_latency.json`: FAISS single nhanh hơn loop ~11.76x, FAISS batch nhanh hơn loop ~75.87x.
+	- `benchmarks/threshold_report.json`: threshold tốt nhất theo F1 là 0.61; threshold cân bằng an toàn hơn cho vận hành đề xuất là 0.66.
+- 🔄 Cần mở rộng dataset (hiện chỉ 3 students hợp lệ) để hiệu chỉnh threshold ổn định hơn trước khi chốt production.
 
 Điều kiện hoàn thành:
 - Thời gian phản hồi recognize ổn định hơn ở tải demo.

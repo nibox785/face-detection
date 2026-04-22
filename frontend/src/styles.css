@@ -138,11 +138,68 @@ button, input {
 
 .student-info {
   flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.student-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.student-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.student-mssv {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.83rem;
+  background: #e0e7ff;
+  color: #1e3a8a;
+}
+
+.student-mssv.empty {
+  background: #f1f5f9;
+  color: #64748b;
 }
 
 .student-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.attendance-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attendance-item {
+  padding: 12px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.attendance-item:last-child {
+  border-bottom: none;
+}
+
+.attendance-content {
+  display: grid;
+  gap: 4px;
+  color: #1f2937;
+}
+
+.attendance-content span {
+  color: #475569;
 }
 
 .btn {

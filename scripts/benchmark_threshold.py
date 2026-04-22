@@ -13,6 +13,21 @@ from face_engine.facenet.embedding import get_embedding
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
+def read_image(path: Path):
+    """Robust image reader for Windows Unicode paths."""
+    try:
+        raw = np.fromfile(str(path), dtype=np.uint8)
+        if raw.size > 0:
+            image = cv2.imdecode(raw, cv2.IMREAD_COLOR)
+            if image is not None:
+                return image
+    except Exception:
+        pass
+
+    # Fallback cho hệ thống không hỗ trợ np.fromfile trên path hiện tại.
+    return cv2.imread(str(path))
+
+
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     denom = np.linalg.norm(a) * np.linalg.norm(b)
     if denom == 0:
@@ -33,7 +48,7 @@ def build_embeddings(dataset_dir: Path) -> Dict[str, List[np.ndarray]]:
     by_student: Dict[str, List[np.ndarray]] = {}
 
     for student_name, image_path in iter_images(dataset_dir):
-        image = cv2.imread(str(image_path))
+        image = read_image(image_path)
         if image is None:
             continue
 

@@ -1,0 +1,15 @@
+{
+  "num_embeddings": 1000,
+  "num_queries": 1000,
+  "dimension": 512,
+  "threshold": 0.68,
+  "loop_total_s": 0.745536,
+  "faiss_single_total_s": 0.0634,
+  "faiss_batch_total_s": 0.009827,
+  "loop_per_query_ms": 0.745536,
+  "faiss_single_per_query_ms": 0.0634,
+  "faiss_batch_per_query_ms": 0.009827,
+  "speedup_single_vs_loop": 11.759,
+  "speedup_batch_vs_loop": 75.866,
+  "speedup_batch_vs_single": 6.452
+}

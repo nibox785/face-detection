@@ -1,6 +1,28 @@
 import { useState } from 'react';
 import { apiFetch } from '../../api/apiClient';
 
+function formatAttendanceTimestamp(timestamp) {
+  if (!timestamp) return 'Khong ro thoi gian';
+
+  // SQLite often returns naive format "YYYY-MM-DD HH:MM:SS".
+  // Render directly to avoid browser timezone reinterpretation.
+  const sqliteMatch = String(timestamp).match(
+    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/
+  );
+
+  if (sqliteMatch) {
+    const [, year, month, day, hour, minute, second] = sqliteMatch;
+    return `${hour}:${minute}:${second} ${day}/${month}/${year}`;
+  }
+
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) {
+    return String(timestamp);
+  }
+
+  return parsed.toLocaleString('vi-VN', { hour12: false });
+}
+
 function StudentsPanel({ students, attendance, onRefresh }) {
   const [deletingId, setDeletingId] = useState(null);
   const [editingStudent, setEditingStudent] = useState(null); // {id, name}
@@ -95,8 +117,15 @@ function StudentsPanel({ students, attendance, onRefresh }) {
               {students.map((student) => (
                 <li key={student.id} className="student-item">
                   <div className="student-info">
-                    <strong>ID: {student.id}</strong> — {student.name}
-                    {student.mssv ? <span className="student-mssv">MSSV: {student.mssv}</span> : <span className="student-mssv empty">Chưa có MSSV</span>}
+                    <div className="student-title-row">
+                      <strong>ID: {student.id}</strong>
+                      <span className="student-name">{student.name}</span>
+                    </div>
+                    {student.mssv ? (
+                      <span className="student-mssv">MSSV: {student.mssv}</span>
+                    ) : (
+                      <span className="student-mssv empty">Chưa có MSSV</span>
+                    )}
                   </div>
                   <div className="student-actions">
                     <button
@@ -136,10 +165,9 @@ function StudentsPanel({ students, attendance, onRefresh }) {
             <ul className="attendance-list">
               {attendance.slice(0, 20).map((record) => (
                 <li key={record.id} className="attendance-item">
-                  <div>
-                    <strong>{new Date(record.timestamp).toLocaleString('vi-VN')}</strong>
-                    <br />
-                    {record.name} (ID: {record.student_id})
+                  <div className="attendance-content">
+                    <strong>{formatAttendanceTimestamp(record.timestamp)}</strong>
+                    <span>{record.name} (ID: {record.student_id})</span>
                   </div>
                 </li>
               ))}
