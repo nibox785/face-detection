@@ -73,6 +73,8 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB max file size
 TARGET_REGISTRATION_FRAMES = 10
 MIN_ACCEPTED_REGISTRATION_FRAMES = 4
 QUALITY_SCORE_THRESHOLD = 0.30
+AUTO_MARK_THRESHOLD = 0.72
+MANUAL_REVIEW_THRESHOLD = 0.55
 
 # ====================== SERVICES ======================
 face_service = FaceService(threshold=0.68)
@@ -725,6 +727,7 @@ async def recognize(
         logger.info(f"Phát hiện {len(faces_with_bbox)} khuôn mặt")
 
         results: List[RecognizeResult] = []
+        student_name_cache = {}
 
         for face_image, bbox in faces_with_bbox:
             try:
@@ -737,6 +740,11 @@ async def recognize(
                             student_id=None,
                             name="Spoof Detected",
                             score=0.0,
+                            decision="REJECT",
+                            liveness={
+                                "is_real": False,
+                                "spoof_score": round(float(spoof_score), 4),
+                            },
                             bbox={
                                 "x": bbox.get("x", 0),
                                 "y": bbox.get("y", 0),
@@ -763,12 +771,42 @@ async def recognize(
                     use_faiss=use_faiss,
                     faiss_index=shared_faiss_index,
                 )
+
+                top_candidates_raw = face_service.recognize_topk(
+                    embedding,
+                    embeddings_cache,
+                    top_k=3,
+                )
                 
             except Exception as e:
                 logger.error(f"Lỗi xử lý face với liveness: {str(e)}")
                 continue
             
+            top_candidates = []
+            for rank, (cand_student_id, cand_score) in enumerate(top_candidates_raw, start=1):
+                candidate_name = "Unknown"
+                if cand_student_id in student_name_cache:
+                    candidate_name = student_name_cache[cand_student_id]
+                else:
+                    student_candidate = get_student_by_id(cand_student_id)
+                    if student_candidate:
+                        candidate_name = student_candidate.get("name", "Unknown")
+                    student_name_cache[cand_student_id] = candidate_name
+
+                top_candidates.append({
+                    "rank": rank,
+                    "student_id": cand_student_id,
+                    "name": candidate_name,
+                    "score": round(float(cand_score), 4),
+                })
+
             student_name = "Unknown"
+            decision = "REJECT"
+
+            if score >= AUTO_MARK_THRESHOLD and student_id:
+                decision = "AUTO_MARK"
+            elif score >= MANUAL_REVIEW_THRESHOLD:
+                decision = "MANUAL_REVIEW"
 
             if student_id:
                 attendance_service.mark_attendance(student_id)
@@ -781,6 +819,12 @@ async def recognize(
                     student_id=student_id,
                     name=student_name,
                     score=round(float(score), 4),
+                    top_candidates=top_candidates,
+                    liveness={
+                        "is_real": bool(is_real),
+                        "spoof_score": round(float(spoof_score), 4),
+                    },
+                    decision=decision,
                     bbox={
                         "x": bbox.get("x", 0),
                         "y": bbox.get("y", 0),

@@ -4,17 +4,19 @@ import { apiFetch } from '../../api/apiClient';
 function formatAttendanceTimestamp(timestamp) {
   if (!timestamp) return 'Khong ro thoi gian';
 
-  // SQLite often returns naive format "YYYY-MM-DD HH:MM:SS".
-  // Render directly to avoid browser timezone reinterpretation.
+  // SQLite retorna formato naive "YYYY-MM-DD HH:MM:SS" em timezone Vietnamita
+  // Não reinterpretamos com timezone do navegador, apenas exibimos como está
   const sqliteMatch = String(timestamp).match(
     /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/
   );
 
   if (sqliteMatch) {
     const [, year, month, day, hour, minute, second] = sqliteMatch;
+    // Exibir no formato: HH:MM:SS DD/MM/YYYY (como armazenado em timezone Vietnamita)
     return `${hour}:${minute}:${second} ${day}/${month}/${year}`;
   }
 
+  // Fallback para outros formatos
   const parsed = new Date(timestamp);
   if (Number.isNaN(parsed.getTime())) {
     return String(timestamp);

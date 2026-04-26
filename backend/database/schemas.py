@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -46,12 +46,22 @@ class BBox(BaseModel):
     confidence: float   # ← Quan trọng: phải là float
 
 
+class TopCandidate(BaseModel):
+    rank: int
+    student_id: Optional[int] = None
+    name: Optional[str] = None
+    score: float
+
+
 # ====================== RECOGNIZE ======================
 class RecognizeResult(BaseModel):
     student_id: Optional[int] = None
     name: Optional[str] = None
     score: float
-    bbox: Optional[BBox] = None 
+    bbox: Optional[BBox] = None
+    top_candidates: List[TopCandidate] = Field(default_factory=list)
+    liveness: Optional[Dict[str, Any]] = None
+    decision: Optional[str] = None
 
 
 class RecognizeResponse(ApiResponse):

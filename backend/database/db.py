@@ -1,8 +1,11 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any
 
 import numpy as np
+
+# Múi giờ Việt Nam (UTC+7)
+VIETNAM_TZ = timezone(timedelta(hours=7))
 
 DB_PATH = "attendance.db"
 EMBEDDING_MAGIC = b"EMB1"
@@ -138,10 +141,13 @@ def save_embedding(student_id, embedding):
 def insert_attendance(student_id):
     conn = get_connection()
     cursor = conn.cursor()
-
+    
+    # Lấy thời gian hiện tại ở múi giờ Việt Nam (UTC+7)
+    vietnam_time = datetime.now(VIETNAM_TZ).strftime('%Y-%m-%d %H:%M:%S')
+    
     cursor.execute(
-        "INSERT INTO attendance (student_id) VALUES (?)",
-        (student_id,)
+        "INSERT INTO attendance (student_id, timestamp) VALUES (?, ?)",
+        (student_id, vietnam_time)
     )
 
     conn.commit()
@@ -151,10 +157,13 @@ def insert_attendance(student_id):
 def check_attendance_today(student_id):
     conn = get_connection()
     cursor = conn.cursor()
+    
+    # Lấy ngày hôm nay ở múi giờ Việt Nam
+    today = datetime.now(VIETNAM_TZ).strftime('%Y-%m-%d')
 
     cursor.execute(
-        "SELECT COUNT(*) FROM attendance WHERE student_id = ? AND DATE(timestamp) = DATE('now')",
-        (student_id,)
+        "SELECT COUNT(*) FROM attendance WHERE student_id = ? AND DATE(timestamp) = ?",
+        (student_id, today)
     )
 
     count = cursor.fetchone()[0]

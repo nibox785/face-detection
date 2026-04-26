@@ -1,0 +1,488 @@
+[
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260414_173632_947543_d310c5a9.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260414_173632_953027_4527e605.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260414_173632_958055_8eb84681.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260414_173632_962543_ca1aecea.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260414_173632_966544_1b43927d.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260414_173632_971568_20359152.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260414_173632_975545_38efea6e.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260414_173632_979355_86c93187.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260414_173632_984528_62f9e71a.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260414_173632_988555_5998a855.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260415_000124_931739_5d11c3bb.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260415_000124_935748_1c2d793e.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260415_000124_936458_00dac432.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260415_000124_936458_95d283b1.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260415_000124_949057_b11218fc.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260415_000124_951065_18a5d532.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260415_000124_956431_2c7449d0.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260415_000124_960427_7a7355ca.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260415_000124_963744_6fbe38e1.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260415_000124_966745_10f6fe5a.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260427_000147_676896_e1a8e4c9.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260427_000147_683727_7235f6b5.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260427_000147_690791_fea7d50b.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260427_000147_696328_2ce48aea.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260427_000147_703176_6061ca8b.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260427_000147_709691_2405ad7a.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260427_000147_715237_9050a978.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260427_000147_723503_fe9d13f8.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260427_000147_729503_115fef1f.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\bona_fide\\X\u00f4_Bin\\20260427_000147_734838_bcea1927.jpg",
+    "ground_truth": "bona_fide",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0001.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0002.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0003.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0004.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0005.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0006.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0007.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0008.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0009.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0010.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0011.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0012.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0013.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0014.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0015.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0016.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0017.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0018.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0019.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0020.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0021.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0022.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0023.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  },
+  {
+    "image": "dataset\\liveness_eval\\attack\\attack_video_goodlight_0024.jpg",
+    "ground_truth": "attack",
+    "predicted": "bona_fide",
+    "is_real": true,
+    "spoof_score": 0.0,
+    "face_detected": true,
+    "error": null
+  }
+]

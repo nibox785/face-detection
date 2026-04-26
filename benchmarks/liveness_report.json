@@ -1,0 +1,20 @@
+{
+  "dataset": "dataset\\liveness_eval",
+  "metrics": {
+    "num_samples": 54,
+    "num_bona_fide": 30,
+    "num_attack": 24,
+    "attack_as_real": 24,
+    "bona_as_attack": 0,
+    "APCER": 100.0,
+    "BPCER": 0.0,
+    "ACER": 50.0,
+    "accuracy": 55.5556,
+    "confusion": {
+      "TP_bona_fide": 30,
+      "TN_attack": 0,
+      "FP_attack_as_real": 24,
+      "FN_bona_as_attack": 0
+    }
+  }
+}

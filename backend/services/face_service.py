@@ -58,6 +58,25 @@ class FaceService:
             logger.error(f"Lỗi cosine_similarity: {str(e)}")
             return -1.0
 
+    def recognize_topk(self, embedding, db_embeddings, top_k: int = 3):
+        """Trả về top-k ứng viên theo cosine similarity để phục vụ explainability."""
+        if not db_embeddings:
+            return []
+
+        try:
+            scored = []
+            for student_id, db_emb in db_embeddings:
+                score = self.cosine_similarity(embedding, db_emb)
+                if score < 0:
+                    continue
+                scored.append((student_id, float(score)))
+
+            scored.sort(key=lambda item: item[1], reverse=True)
+            return scored[:max(1, int(top_k))]
+        except Exception as e:
+            logger.error(f"Lỗi recognize_topk: {str(e)}", exc_info=True)
+            return []
+
     def recognize(self, embedding, db_embeddings, use_faiss=False, faiss_index=None):
         """
         Nhận diện sinh viên từ embedding.
