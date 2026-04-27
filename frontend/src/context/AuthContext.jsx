@@ -5,7 +5,6 @@ import {
   clearToken,
   verifyAuthToken,
   apiLogout,
-  bestEffortLogoutOnClose,
 } from '../api/apiClient';
 
 const AuthContext = createContext();
@@ -40,17 +39,6 @@ export function AuthProvider({ children }) {
 
     return () => {
       isMounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      bestEffortLogoutOnClose(getToken());
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
 

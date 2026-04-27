@@ -1,6 +1,7 @@
 import logging
 import numpy as np
 import cv2
+from typing import Any, Dict, Tuple
 
 try:
     from deepface import DeepFace
@@ -13,6 +14,37 @@ logger = logging.getLogger("face-attendance.face_engine.embedding")
 def _ensure_deepface():
     if DeepFace is None:
         raise RuntimeError("DeepFace chưa được cài đặt. Chạy: pip install deepface")
+
+
+def _parse_liveness_result(item: Dict[str, Any]) -> Tuple[bool, float]:
+    """Parse liveness fields from DeepFace output using fail-closed defaults."""
+    if not isinstance(item, dict):
+        return False, 1.0
+
+    is_real = item.get("is_real")
+    spoof_score = item.get("antispoof_score")
+
+    # Backward/alternative payload shape compatibility.
+    if is_real is None or spoof_score is None:
+        anti_spoof = item.get("anti_spoofing")
+        if isinstance(anti_spoof, dict):
+            if is_real is None:
+                is_real = anti_spoof.get("is_real")
+            if spoof_score is None:
+                spoof_score = anti_spoof.get("score")
+
+    # DeepFace can omit anti-spoof fields in some detector flows.
+    if is_real is None:
+        is_real = False
+    if spoof_score is None:
+        spoof_score = 1.0
+
+    try:
+        spoof_score = float(spoof_score)
+    except (TypeError, ValueError):
+        spoof_score = 1.0
+
+    return bool(is_real), spoof_score
 
 
 def get_embedding(face_image: np.ndarray):
@@ -60,29 +92,24 @@ def get_embedding_with_liveness(face_image: np.ndarray):
     try:
         _ensure_deepface()
 
-        if face_image.shape[:2] != (160, 160):
-            face_image = cv2.resize(face_image, (160, 160), interpolation=cv2.INTER_AREA)
+        # Keep embedding path unchanged and stable.
+        embedding = get_embedding(face_image)
 
-        rgb_face = cv2.cvtColor(face_image, cv2.COLOR_BGR2RGB)
-
-        # Bật anti_spoofing
-        result = DeepFace.represent(
-            img_path=rgb_face,
-            model_name="Facenet512",
+        # Run anti-spoofing in detection flow (instead of represent+skip) so
+        # DeepFace can return liveness fields (`is_real`, `antispoof_score`).
+        liveness_result = DeepFace.extract_faces(
+            img_path=face_image,
+            detector_backend="opencv",
             enforce_detection=False,
-            detector_backend="skip",
             align=True,
-            normalization="base",
-            anti_spoofing=True          # ← Quan trọng
+            anti_spoofing=True,
         )
 
-        embedding = np.array(result[0]["embedding"], dtype=np.float32)
-        embedding = embedding / np.linalg.norm(embedding)
+        if not liveness_result:
+            logger.warning("⚠️ Liveness extract_faces không trả về khuôn mặt - reject theo fail-closed")
+            return embedding, False, 1.0
 
-        # Lấy kết quả liveness
-        anti_spoof = result[0].get("anti_spoofing", {})
-        is_real = anti_spoof.get("is_real", True)
-        spoof_score = anti_spoof.get("score", 0.0)   # Score càng cao càng nghi ngờ giả mạo
+        is_real, spoof_score = _parse_liveness_result(liveness_result[0])
 
         logger.info(f"Liveness: is_real={is_real}, spoof_score={spoof_score:.4f}")
 

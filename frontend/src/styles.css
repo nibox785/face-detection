@@ -18,6 +18,103 @@ button, input {
   font: inherit;
 }
 
+/* Confirm dialog (custom replacement for window.confirm) */
+.confirm-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(circle at 30% 20%, rgba(59, 130, 246, 0.25), rgba(0, 0, 0, 0.62));
+  display: grid;
+  place-items: center;
+  z-index: 1200;
+  padding: 18px;
+}
+
+.confirm-dialog__card {
+  width: 100%;
+  max-width: 520px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.22);
+  padding: 20px 20px 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.confirm-dialog__card::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(120deg, rgba(37, 99, 235, 0.25), rgba(16, 185, 129, 0.16), rgba(236, 72, 153, 0.12));
+  filter: blur(14px);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.confirm-dialog__header,
+.confirm-dialog__actions,
+.confirm-dialog__hint {
+  position: relative;
+  z-index: 1;
+}
+
+.confirm-dialog__header {
+  display: grid;
+  grid-template-columns: 46px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.confirm-dialog__badge {
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  font-size: 1.2rem;
+  background: #e0e7ff;
+  color: #1e3a8a;
+  border: 1px solid rgba(30, 58, 138, 0.12);
+}
+
+.confirm-dialog--danger .confirm-dialog__badge {
+  background: #fee2e2;
+  color: #7f1d1d;
+  border-color: rgba(127, 29, 29, 0.18);
+}
+
+.confirm-dialog--info .confirm-dialog__badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-color: rgba(29, 78, 216, 0.18);
+}
+
+.confirm-dialog__title {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1.22rem;
+}
+
+.confirm-dialog__message {
+  margin: 6px 0 0;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.confirm-dialog__hint {
+  margin-top: 10px;
+  font-size: 0.86rem;
+  color: #64748b;
+}
+
 .app-shell {
   display: flex;
   flex-direction: column;

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { apiFetch } from '../../api/apiClient';
+import ConfirmDialog from '../common/ConfirmDialog';
 
 function formatAttendanceTimestamp(timestamp) {
   if (!timestamp) return 'Khong ro thoi gian';
@@ -30,6 +31,11 @@ function StudentsPanel({ students, attendance, onRefresh }) {
   const [editingStudent, setEditingStudent] = useState(null); // {id, name}
   const [newName, setNewName] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState({
+    open: false,
+    studentId: null,
+    studentName: '',
+  });
 
   // Mở modal chỉnh sửa
   const handleEdit = (student) => {
@@ -77,13 +83,16 @@ function StudentsPanel({ students, attendance, onRefresh }) {
 
   // Xóa sinh viên
   async function handleDelete(studentId, studentName) {
-    const confirmDelete = window.confirm(
-      `Bạn có chắc chắn muốn xóa sinh viên "${studentName}" (ID: ${studentId})?\n\n` +
-      "Tất cả embedding và lịch sử điểm danh sẽ bị xóa vĩnh viễn."
-    );
+    setDeleteConfirm({ open: true, studentId, studentName });
+  }
 
-    if (!confirmDelete) return;
-
+  async function confirmDeleteNow() {
+    const studentId = deleteConfirm.studentId;
+    const studentName = deleteConfirm.studentName;
+    if (!studentId) {
+      setDeleteConfirm({ open: false, studentId: null, studentName: '' });
+      return;
+    }
     setDeletingId(studentId);
 
     try {
@@ -102,6 +111,19 @@ function StudentsPanel({ students, attendance, onRefresh }) {
 
   return (
     <div className="panel-grid">
+      <ConfirmDialog
+        open={deleteConfirm.open}
+        title="Bạn chắc chắn muốn xóa chứ?"
+        message={`Xóa "${deleteConfirm.studentName}" (ID: ${deleteConfirm.studentId}) sẽ xóa luôn embedding và lịch sử điểm danh. Không thể hoàn tác.`}
+        confirmText={deletingId ? 'Đang xóa...' : 'Xóa luôn'}
+        cancelText="Thôi, để đó"
+        tone="danger"
+        onCancel={() => setDeleteConfirm({ open: false, studentId: null, studentName: '' })}
+        onConfirm={async () => {
+          await confirmDeleteNow();
+          setDeleteConfirm({ open: false, studentId: null, studentName: '' });
+        }}
+      />
       {/* Danh sách sinh viên */}
       <section className="panel-card">
         <div className="panel-header">

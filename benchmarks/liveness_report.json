@@ -1,20 +1,24 @@
 {
   "dataset": "dataset\\liveness_eval",
+  "policy": {
+    "predicted_bona_fide_if": "is_real == True and spoof_score < spoof_threshold",
+    "spoof_threshold": 0.92
+  },
   "metrics": {
     "num_samples": 54,
     "num_bona_fide": 30,
     "num_attack": 24,
-    "attack_as_real": 24,
-    "bona_as_attack": 0,
-    "APCER": 100.0,
-    "BPCER": 0.0,
-    "ACER": 50.0,
-    "accuracy": 55.5556,
+    "attack_as_real": 2,
+    "bona_as_attack": 19,
+    "APCER": 8.3333,
+    "BPCER": 63.3333,
+    "ACER": 35.8333,
+    "accuracy": 61.1111,
     "confusion": {
-      "TP_bona_fide": 30,
-      "TN_attack": 0,
-      "FP_attack_as_real": 24,
-      "FN_bona_as_attack": 0
+      "TP_bona_fide": 11,
+      "TN_attack": 22,
+      "FP_attack_as_real": 2,
+      "FN_bona_as_attack": 19
     }
   }
 }

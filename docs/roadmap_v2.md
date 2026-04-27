@@ -1,7 +1,7 @@
 # 🚀 Roadmap V2 - Face Attendance System
 
 ## Mục tiêu tổng quan
-- Chuyển từ bản prototype (mock AI) sang hệ thống nhận diện thật với FaceNet + MTCNN.
+- Chuyển từ bản prototype (mock AI) sang hệ thống nhận diện thật với DeepFace (RetinaFace + Facenet512).
 - Ổn định backend, chuẩn hóa frontend và hoàn thiện demo đồ án.
 
 ## Sprint ưu tiên theo mức độ nghiêm trọng
@@ -102,19 +102,19 @@ Tiến độ hiện tại:
 
 ---
 
-## Phase 1 - AI Core thật (FaceNet + MTCNN) (3-5 ngày)
+## Phase 1 - AI Core thật (DeepFace RetinaFace + Facenet512) (3-5 ngày)
 ### Mục tiêu
 - Thay hoàn toàn mock detect/embedding bằng model thật.
 
 ### Việc cần làm
-- Tích hợp MTCNN cho detect khuôn mặt.
-- Tích hợp FaceNet để trích xuất embedding 512-d.
+- Tích hợp RetinaFace (qua DeepFace) cho detect khuôn mặt.
+- Tích hợp Facenet512 (qua DeepFace) để trích xuất embedding 512-d.
 - Chuẩn hóa tiền xử lý ảnh (crop, resize, normalize).
 - Thiết lập ngưỡng similarity ban đầu (threshold tuning).
 
 ### Deliverables
-- `detect.py` chạy model MTCNN thật.
-- `embedding.py` chạy FaceNet thật.
+- `detect.py` chạy detect thật voi RetinaFace.
+- `embedding.py` chạy embedding thật voi Facenet512.
 - Script benchmark ngưỡng nhận diện.
 
 ### KPI

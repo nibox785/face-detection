@@ -1,28 +1,30 @@
-# 🚀 Lộ trình phát triển dự án
+# Roadmap (Summary)
 
-## Phase 1: AI Core
-- Phát hiện khuôn mặt
-- Trích xuất embedding
-- So sánh similarity
+Tai lieu nay la ban tom tat dong bo tu `roadmap_v2.md`.
 
-## Phase 2: Backend
-- Xây dựng API:
-  - /register
-  - /recognize
+## Nguon chinh
 
-## Phase 3: Frontend
-- Giao diện camera
-- Hiển thị kết quả
+- Su dung `docs/roadmap_v2.md` lam roadmap chi tiet va cap nhat thuong xuyen.
 
-## Phase 4: Integration
-- Kết nối frontend + backend + AI
+## Tinh hinh hien tai
 
-## Phase 5: Tối ưu
-- Nhận diện nhiều người
-- Cache embedding
-- Tối ưu hiệu năng
+- Sprint P0: Hoan thanh
+  - On dinh auth + revoke token ben vung
+  - Chuan hoa DB layer
+  - Xoa du lieu theo cascade an toan
 
-## Phase 6: Demo
-- Test hệ thống
-- Chuẩn bị slide
-- Quay video demo
+- Sprint P1: Da trien khai phan lon
+  - Bo sung test API core
+  - Bo sung test compatibility embedding
+  - Chuan hoa moi truong test
+
+- Sprint P2: Dang trien khai
+  - FAISS batch optimization
+  - Model warm-up khi startup
+  - Benchmark latency/threshold
+
+## Huong tiep theo
+
+1. Mo rong dataset danh gia de on dinh threshold van hanh.
+2. Chuan hoa contract API frontend-backend cho cac endpoint quan tri.
+3. Bo sung monitoring va hardening cho production-like demo.

@@ -1,6 +1,11 @@
 const API_BASE = 'http://127.0.0.1:8000/api';
 const TOKEN_KEY = 'fa_token';
 
+function getWsOrigin() {
+  // WS endpoints are mounted under the same FastAPI router prefix (`/api`).
+  return API_BASE.replace(/^http:\/\//i, 'ws://').replace(/^https:\/\//i, 'wss://');
+}
+
 export function getToken() {
   return sessionStorage.getItem(TOKEN_KEY);
 }
@@ -19,6 +24,23 @@ export function clearToken() {
 export function authHeaders() {
   const token = getToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export function buildRecognizeWsUrl(token) {
+  const finalToken = token || getToken();
+  if (!finalToken) return null;
+
+  const wsBase = getWsOrigin();
+  return `${wsBase}/ws/recognize?token=${encodeURIComponent(finalToken)}`;
+}
+
+export function buildRealtimeWsUrl(sessionId, token) {
+  const finalToken = token || getToken();
+  if (!finalToken) return null;
+  if (!sessionId) return null;
+
+  const wsBase = getWsOrigin();
+  return `${wsBase}/ws/realtime/${encodeURIComponent(String(sessionId))}?token=${encodeURIComponent(finalToken)}`;
 }
 
 export async function apiFetch(url, options = {}) {

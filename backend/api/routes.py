@@ -1,15 +1,18 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, status, Form, Query, Header
+from fastapi import APIRouter, UploadFile, File, HTTPException, status, Form, Query, Header, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, JSONResponse
 import numpy as np
 import cv2
 import logging
 import csv
+import json
+import base64
 from io import StringIO, BytesIO
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from uuid import uuid4
 import jwt
+import time
 
 try:
     from slowapi import Limiter
@@ -52,7 +55,19 @@ from backend.database.schemas import (
     LoginRequest
 )
 
-from core.config import ADMIN_USERNAME, ADMIN_PASSWORD, SECRET_KEY, ACCESS_TOKEN_EXPIRE_SECONDS
+from core.config import (
+    ADMIN_USERNAME,
+    ADMIN_PASSWORD,
+    SECRET_KEY,
+    ACCESS_TOKEN_EXPIRE_SECONDS,
+    SPOOF_REJECT_THRESHOLD,
+    SPOOF_SUSPECT_THRESHOLD,
+    SPOOF_ADAPTIVE_AREA_START_RATIO,
+    SPOOF_ADAPTIVE_MAX_BONUS,
+    REALTIME_WS_DETECT_INTERVAL_MS,
+    REALTIME_WS_TRACK_TTL_MS,
+    REALTIME_WS_RECOGNIZE_COOLDOWN_MS,
+)
 
 # ====================== CONFIG ======================
 router = APIRouter()
@@ -73,8 +88,9 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB max file size
 TARGET_REGISTRATION_FRAMES = 10
 MIN_ACCEPTED_REGISTRATION_FRAMES = 4
 QUALITY_SCORE_THRESHOLD = 0.30
-AUTO_MARK_THRESHOLD = 0.72
-MANUAL_REVIEW_THRESHOLD = 0.55
+AUTO_MARK_THRESHOLD = 0.66
+MANUAL_REVIEW_THRESHOLD = 0.48
+SUSPECT_LIVENESS_STRONG_MATCH_DELTA = 0.04
 
 # ====================== SERVICES ======================
 face_service = FaceService(threshold=0.68)
@@ -262,9 +278,472 @@ def extract_bearer_token(authorization: Optional[str]) -> str:
     return authorization.split(' ', 1)[1]
 
 
+def _compute_face_area_ratio(bbox: Optional[dict], frame_shape: Optional[Tuple[int, ...]]) -> float:
+    if not bbox or not frame_shape or len(frame_shape) < 2:
+        return 0.0
+
+    frame_h, frame_w = frame_shape[:2]
+    frame_area = float(max(1, frame_h * frame_w))
+    face_w = float(max(0, bbox.get("w", 0)))
+    face_h = float(max(0, bbox.get("h", 0)))
+    return float((face_w * face_h) / frame_area)
+
+
+def _adaptive_suspect_threshold(face_area_ratio: float) -> float:
+    if face_area_ratio <= SPOOF_ADAPTIVE_AREA_START_RATIO:
+        return float(SPOOF_SUSPECT_THRESHOLD)
+
+    bonus = min(
+        float(SPOOF_ADAPTIVE_MAX_BONUS),
+        max(0.0, (face_area_ratio - SPOOF_ADAPTIVE_AREA_START_RATIO) * 0.8),
+    )
+
+    # Always keep suspect threshold below hard reject threshold.
+    upper_bound = max(float(SPOOF_SUSPECT_THRESHOLD), float(SPOOF_REJECT_THRESHOLD) - 0.02)
+    return float(min(upper_bound, float(SPOOF_SUSPECT_THRESHOLD) + bonus))
+
+
+def should_reject_liveness(
+    is_real: bool,
+    spoof_score: float,
+    bbox: Optional[dict] = None,
+    frame_shape: Optional[Tuple[int, ...]] = None,
+) -> tuple[bool, str, float, float]:
+    """
+    Two-stage anti-spoof gate to reduce false reject bursts at session start:
+    1) Hard reject if spoof_score is very high.
+    2) Suspect reject only when model says non-real AND score is above suspect threshold.
+    """
+    try:
+        score = float(spoof_score)
+    except (TypeError, ValueError):
+        score = 1.0
+
+    face_area_ratio = _compute_face_area_ratio(bbox, frame_shape)
+    suspect_threshold = _adaptive_suspect_threshold(face_area_ratio)
+
+    # In practice DeepFace score semantics can vary between builds. For live
+    # attendance, only hard-reject when model also indicates non-real.
+    if (not bool(is_real)) and score >= SPOOF_REJECT_THRESHOLD:
+        return True, "high_spoof_score", face_area_ratio, suspect_threshold
+
+    if (not bool(is_real)) and score >= suspect_threshold:
+        return True, "suspect_non_real", face_area_ratio, suspect_threshold
+
+    return False, "pass_or_uncertain", face_area_ratio, suspect_threshold
+
+
 def get_current_admin(authorization: Optional[str] = Header(None)) -> dict:
     token = extract_bearer_token(authorization)
     return verify_access_token(token)
+
+
+def _model_to_dict(model):
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
+
+
+def _decode_ws_image_to_frame(image_b64: str) -> np.ndarray:
+    if not image_b64:
+        raise ValueError("Thiếu dữ liệu ảnh")
+
+    payload = image_b64
+    if image_b64.startswith("data:") and "," in image_b64:
+        payload = image_b64.split(",", 1)[1]
+
+    raw = base64.b64decode(payload)
+    np_arr = np.frombuffer(raw, np.uint8)
+    frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    if frame is None:
+        raise ValueError("Không thể decode ảnh từ websocket payload")
+    return frame
+
+
+def _attach_track_ids_from_hints(results: List[dict], track_hints: List[dict]) -> List[dict]:
+    if not results:
+        return results
+
+    hints = [
+        hint for hint in (track_hints or [])
+        if isinstance(hint, dict) and hint.get("track_id")
+    ]
+    if not hints:
+        return results
+
+    used_hint_indexes = set()
+    max_match_distance_px = 240.0
+
+    for result in results:
+        bbox = result.get("bbox") or {}
+        if not bbox:
+            continue
+
+        rcx = float(bbox.get("x", 0)) + float(bbox.get("w", 0)) / 2.0
+        rcy = float(bbox.get("y", 0)) + float(bbox.get("h", 0)) / 2.0
+        best_idx = -1
+        best_dist = float("inf")
+
+        for idx, hint in enumerate(hints):
+            if idx in used_hint_indexes:
+                continue
+            hcx = float(hint.get("x", 0)) + float(hint.get("w", 0)) / 2.0
+            hcy = float(hint.get("y", 0)) + float(hint.get("h", 0)) / 2.0
+            dist = float(np.hypot(rcx - hcx, rcy - hcy))
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = idx
+
+        if best_idx >= 0 and best_dist <= max_match_distance_px:
+            used_hint_indexes.add(best_idx)
+            result["track_id"] = hints[best_idx].get("track_id")
+
+    return results
+
+
+def run_recognition_on_frame(frame: np.ndarray) -> List[RecognizeResult]:
+    faces_with_bbox = face_service.detect(frame)
+    if not faces_with_bbox:
+        return []
+
+    logger.info(f"Phát hiện {len(faces_with_bbox)} khuôn mặt")
+    results: List[RecognizeResult] = []
+    student_name_cache = {}
+
+    for face_image, bbox in faces_with_bbox:
+        try:
+            liveness_penalty = False
+            liveness_reject_reason = None
+
+            # === LIVENESS DETECTION ===
+            embedding, is_real, spoof_score = face_service.get_embedding_with_liveness(face_image)
+
+            should_reject, reject_reason, face_area_ratio, suspect_threshold = should_reject_liveness(
+                is_real,
+                spoof_score,
+                bbox=bbox,
+                frame_shape=frame.shape,
+            )
+            if should_reject and reject_reason == "high_spoof_score":
+                results.append(
+                    RecognizeResult(
+                        student_id=None,
+                        name="Spoof Detected",
+                        score=0.0,
+                        decision="REJECT",
+                        liveness={
+                            "is_real": False,
+                            "spoof_score": round(float(spoof_score), 4),
+                            "reject_reason": reject_reason,
+                            "face_area_ratio": round(float(face_area_ratio), 4),
+                            "suspect_threshold": round(float(suspect_threshold), 4),
+                            "hard_threshold": round(float(SPOOF_REJECT_THRESHOLD), 4),
+                        },
+                        bbox={
+                            "x": bbox.get("x", 0),
+                            "y": bbox.get("y", 0),
+                            "w": bbox.get("w", 0),
+                            "h": bbox.get("h", 0),
+                            "confidence": float(bbox.get("confidence", 0.0))
+                        } if bbox else None
+                    )
+                )
+                logger.warning(
+                    f"🚨 Phát hiện spoof attack! Score: {float(spoof_score):.4f}, reason={reject_reason}"
+                )
+                continue
+
+            if should_reject and reject_reason == "suspect_non_real":
+                liveness_penalty = True
+                liveness_reject_reason = reject_reason
+                logger.info(
+                    "Liveness suspect frame: keep recognition path with decision penalty "
+                    f"(score={float(spoof_score):.4f}, area={face_area_ratio:.4f})"
+                )
+
+            # Nếu là người thật → tiếp tục recognize bình thường (với FAISS nếu có)
+            try:
+                from backend.main import faiss_index as shared_faiss_index
+                use_faiss = shared_faiss_index is not None and shared_faiss_index.is_built
+            except Exception:
+                shared_faiss_index = None
+                use_faiss = False
+
+            student_id, score = face_service.recognize(
+                embedding,
+                embeddings_cache,
+                use_faiss=use_faiss,
+                faiss_index=shared_faiss_index,
+            )
+
+            top_candidates_raw = face_service.recognize_topk(
+                embedding,
+                embeddings_cache,
+                top_k=3,
+            )
+
+        except Exception as e:
+            logger.error(f"Lỗi xử lý face với liveness: {str(e)}")
+            continue
+
+        top_candidates = []
+        for rank, (cand_student_id, cand_score) in enumerate(top_candidates_raw, start=1):
+            candidate_name = "Unknown"
+            if cand_student_id in student_name_cache:
+                candidate_name = student_name_cache[cand_student_id]
+            else:
+                student_candidate = get_student_by_id(cand_student_id)
+                if student_candidate:
+                    candidate_name = student_candidate.get("name", "Unknown")
+                student_name_cache[cand_student_id] = candidate_name
+
+            top_candidates.append({
+                "rank": rank,
+                "student_id": cand_student_id,
+                "name": candidate_name,
+                "score": round(float(cand_score), 4),
+            })
+
+        student_name = "Unknown"
+        decision = "REJECT"
+
+        if score >= AUTO_MARK_THRESHOLD and student_id:
+            if liveness_penalty:
+                strong_match_threshold = AUTO_MARK_THRESHOLD + SUSPECT_LIVENESS_STRONG_MATCH_DELTA
+                decision = "AUTO_MARK" if score >= strong_match_threshold else "MANUAL_REVIEW"
+            else:
+                decision = "AUTO_MARK"
+        elif score >= MANUAL_REVIEW_THRESHOLD:
+            decision = "MANUAL_REVIEW"
+
+        if student_id:
+            attendance_service.mark_attendance(student_id)
+            student = get_student_by_id(student_id)
+            student_name = student['name'] if student else "Unknown"
+            logger.info(f"Điểm danh thành công - Student ID: {student_id} | Name: {student_name} | Score: {score:.4f}")
+
+        results.append(
+            RecognizeResult(
+                student_id=student_id,
+                name=student_name,
+                score=round(float(score), 4),
+                top_candidates=top_candidates,
+                liveness={
+                    "is_real": bool(is_real),
+                    "spoof_score": round(float(spoof_score), 4),
+                    "reject_reason": liveness_reject_reason,
+                    "face_area_ratio": round(_compute_face_area_ratio(bbox, frame.shape), 4),
+                    "suspect_threshold": round(
+                        _adaptive_suspect_threshold(_compute_face_area_ratio(bbox, frame.shape)),
+                        4,
+                    ),
+                    "hard_threshold": round(float(SPOOF_REJECT_THRESHOLD), 4),
+                },
+                decision=decision,
+                bbox={
+                    "x": bbox.get("x", 0),
+                    "y": bbox.get("y", 0),
+                    "w": bbox.get("w", 0),
+                    "h": bbox.get("h", 0),
+                    "confidence": float(bbox.get("confidence", 0.0))
+                } if bbox else None
+            )
+        )
+
+    return results
+
+
+def run_recognition_on_face_crop(face_image: np.ndarray) -> Optional[RecognizeResult]:
+    """
+    Nhận diện trực tiếp trên face crop (không chạy detect).
+    Dùng cho realtime WS theo track_id (frontend giữ bbox local).
+    """
+    if face_image is None or getattr(face_image, "size", 0) == 0:
+        return None
+
+    try:
+        liveness_penalty = False
+        liveness_reject_reason = None
+
+        embedding, is_real, spoof_score = face_service.get_embedding_with_liveness(face_image)
+
+        # Với crop, không có bbox/frame_shape đầy đủ → dùng gate cơ bản (không adaptive theo area).
+        should_reject, reject_reason, face_area_ratio, suspect_threshold = should_reject_liveness(
+            is_real,
+            spoof_score,
+            bbox=None,
+            frame_shape=None,
+        )
+
+        if should_reject and reject_reason == "high_spoof_score":
+            return RecognizeResult(
+                student_id=None,
+                name="Spoof Detected",
+                score=0.0,
+                decision="REJECT",
+                liveness={
+                    "is_real": False,
+                    "spoof_score": round(float(spoof_score), 4),
+                    "reject_reason": reject_reason,
+                    "face_area_ratio": round(float(face_area_ratio), 4),
+                    "suspect_threshold": round(float(suspect_threshold), 4),
+                    "hard_threshold": round(float(SPOOF_REJECT_THRESHOLD), 4),
+                },
+                bbox=None,
+            )
+
+        if should_reject and reject_reason == "suspect_non_real":
+            liveness_penalty = True
+            liveness_reject_reason = reject_reason
+
+        try:
+            from backend.main import faiss_index as shared_faiss_index
+            use_faiss = shared_faiss_index is not None and shared_faiss_index.is_built
+        except Exception:
+            shared_faiss_index = None
+            use_faiss = False
+
+        student_id, score = face_service.recognize(
+            embedding,
+            embeddings_cache,
+            use_faiss=use_faiss,
+            faiss_index=shared_faiss_index,
+        )
+
+        top_candidates_raw = face_service.recognize_topk(
+            embedding,
+            embeddings_cache,
+            top_k=3,
+        )
+    except Exception as e:
+        logger.error(f"Lỗi recognize trên face crop: {str(e)}", exc_info=True)
+        return None
+
+    student_name_cache = {}
+    top_candidates = []
+    for rank, (cand_student_id, cand_score) in enumerate(top_candidates_raw, start=1):
+        candidate_name = "Unknown"
+        if cand_student_id in student_name_cache:
+            candidate_name = student_name_cache[cand_student_id]
+        else:
+            student_candidate = get_student_by_id(cand_student_id)
+            if student_candidate:
+                candidate_name = student_candidate.get("name", "Unknown")
+            student_name_cache[cand_student_id] = candidate_name
+
+        top_candidates.append({
+            "rank": rank,
+            "student_id": cand_student_id,
+            "name": candidate_name,
+            "score": round(float(cand_score), 4),
+        })
+
+    student_name = "Unknown"
+    decision = "REJECT"
+
+    if score >= AUTO_MARK_THRESHOLD and student_id:
+        if liveness_penalty:
+            strong_match_threshold = AUTO_MARK_THRESHOLD + SUSPECT_LIVENESS_STRONG_MATCH_DELTA
+            decision = "AUTO_MARK" if score >= strong_match_threshold else "MANUAL_REVIEW"
+        else:
+            decision = "AUTO_MARK"
+    elif score >= MANUAL_REVIEW_THRESHOLD:
+        decision = "MANUAL_REVIEW"
+
+    if student_id:
+        attendance_service.mark_attendance(student_id)
+        student = get_student_by_id(student_id)
+        student_name = student["name"] if student else "Unknown"
+
+    return RecognizeResult(
+        student_id=student_id,
+        name=student_name,
+        score=round(float(score), 4),
+        top_candidates=top_candidates,
+        liveness={
+            "is_real": bool(is_real),
+            "spoof_score": round(float(spoof_score), 4),
+            "reject_reason": liveness_reject_reason,
+            "face_area_ratio": round(float(face_area_ratio), 4),
+            "suspect_threshold": round(float(suspect_threshold), 4),
+            "hard_threshold": round(float(SPOOF_REJECT_THRESHOLD), 4),
+        },
+        decision=decision,
+        bbox=None,
+    )
+
+
+def _now_ms() -> int:
+    return int(time.monotonic() * 1000)
+
+
+def _center_of_bbox(bbox: dict) -> tuple[float, float]:
+    x = float(bbox.get("x", 0))
+    y = float(bbox.get("y", 0))
+    w = float(bbox.get("w", 0))
+    h = float(bbox.get("h", 0))
+    return (x + w / 2.0, y + h / 2.0)
+
+
+def _match_detections_to_tracks(
+    detections: List[dict],
+    tracks: List[dict],
+    max_center_dist_px: float = 160.0,
+) -> tuple[dict[int, int], set[int], set[int]]:
+    """
+    Greedy center-distance assignment.
+    Returns:
+      - det_to_track: det_idx -> track_idx
+      - used_det_idxs
+      - used_track_idxs
+    """
+    det_centers = [_center_of_bbox(det["bbox"]) for det in detections]
+    track_centers = [_center_of_bbox(tr["bbox"]) for tr in tracks]
+
+    pairs = []
+    for di, (dcx, dcy) in enumerate(det_centers):
+        for ti, (tcx, tcy) in enumerate(track_centers):
+            dist = float(np.hypot(dcx - tcx, dcy - tcy))
+            if dist <= max_center_dist_px:
+                pairs.append((dist, di, ti))
+    pairs.sort(key=lambda item: item[0])
+
+    det_to_track: dict[int, int] = {}
+    used_det = set()
+    used_track = set()
+    for dist, di, ti in pairs:
+        if di in used_det or ti in used_track:
+            continue
+        det_to_track[di] = ti
+        used_det.add(di)
+        used_track.add(ti)
+
+    return det_to_track, used_det, used_track
+
+
+# session_id -> {"tracks": List[dict], "last_seen_ms": int}
+_realtime_sessions: dict[str, dict] = {}
+
+
+def _create_cv2_tracker():
+    """
+    Prefer very fast trackers for realtime bbox continuity.
+    MOSSE is typically the fastest; fallback to KCF.
+    """
+    # OpenCV 4.x may expose trackers under cv2.legacy
+    legacy = getattr(cv2, "legacy", None)
+    if legacy is not None:
+        if hasattr(legacy, "TrackerMOSSE_create"):
+            return legacy.TrackerMOSSE_create()
+        if hasattr(legacy, "TrackerKCF_create"):
+            return legacy.TrackerKCF_create()
+
+    if hasattr(cv2, "TrackerMOSSE_create"):
+        return cv2.TrackerMOSSE_create()
+    if hasattr(cv2, "TrackerKCF_create"):
+        return cv2.TrackerKCF_create()
+
+    return None
 
 
 # ====================== AUTH ======================
@@ -715,135 +1194,313 @@ async def recognize(
         if frame is None:
             raise HTTPException(status_code=400, detail="Không thể đọc được file ảnh")
 
-        faces_with_bbox = face_service.detect(frame)
-
-        if not faces_with_bbox:
-            return RecognizeResponse(
-                status="success",
-                message="Không phát hiện được khuôn mặt nào trong ảnh.",
-                data=[]
-            )
-
-        logger.info(f"Phát hiện {len(faces_with_bbox)} khuôn mặt")
-
-        results: List[RecognizeResult] = []
-        student_name_cache = {}
-
-        for face_image, bbox in faces_with_bbox:
-            try:
-                # === LIVENESS DETECTION ===
-                embedding, is_real, spoof_score = face_service.get_embedding_with_liveness(face_image)
-                
-                if not is_real and spoof_score > 0.65:   # Ngưỡng spoof (có thể điều chỉnh)
-                    results.append(
-                        RecognizeResult(
-                            student_id=None,
-                            name="Spoof Detected",
-                            score=0.0,
-                            decision="REJECT",
-                            liveness={
-                                "is_real": False,
-                                "spoof_score": round(float(spoof_score), 4),
-                            },
-                            bbox={
-                                "x": bbox.get("x", 0),
-                                "y": bbox.get("y", 0),
-                                "w": bbox.get("w", 0),
-                                "h": bbox.get("h", 0),
-                                "confidence": float(bbox.get("confidence", 0.0))
-                            } if bbox else None
-                        )
-                    )
-                    logger.warning(f"🚨 Phát hiện spoof attack! Score: {spoof_score:.4f}")
-                    continue
-
-                # Nếu là người thật → tiếp tục recognize bình thường (với FAISS nếu có)
-                try:
-                    from backend.main import faiss_index as shared_faiss_index
-                    use_faiss = shared_faiss_index is not None and shared_faiss_index.is_built
-                except:
-                    shared_faiss_index = None
-                    use_faiss = False
-                
-                student_id, score = face_service.recognize(
-                    embedding,
-                    embeddings_cache,
-                    use_faiss=use_faiss,
-                    faiss_index=shared_faiss_index,
-                )
-
-                top_candidates_raw = face_service.recognize_topk(
-                    embedding,
-                    embeddings_cache,
-                    top_k=3,
-                )
-                
-            except Exception as e:
-                logger.error(f"Lỗi xử lý face với liveness: {str(e)}")
-                continue
-            
-            top_candidates = []
-            for rank, (cand_student_id, cand_score) in enumerate(top_candidates_raw, start=1):
-                candidate_name = "Unknown"
-                if cand_student_id in student_name_cache:
-                    candidate_name = student_name_cache[cand_student_id]
-                else:
-                    student_candidate = get_student_by_id(cand_student_id)
-                    if student_candidate:
-                        candidate_name = student_candidate.get("name", "Unknown")
-                    student_name_cache[cand_student_id] = candidate_name
-
-                top_candidates.append({
-                    "rank": rank,
-                    "student_id": cand_student_id,
-                    "name": candidate_name,
-                    "score": round(float(cand_score), 4),
-                })
-
-            student_name = "Unknown"
-            decision = "REJECT"
-
-            if score >= AUTO_MARK_THRESHOLD and student_id:
-                decision = "AUTO_MARK"
-            elif score >= MANUAL_REVIEW_THRESHOLD:
-                decision = "MANUAL_REVIEW"
-
-            if student_id:
-                attendance_service.mark_attendance(student_id)
-                student = get_student_by_id(student_id)
-                student_name = student['name'] if student else "Unknown"
-                logger.info(f"Điểm danh thành công - Student ID: {student_id} | Name: {student_name} | Score: {score:.4f}")
-
-            results.append(
-                RecognizeResult(
-                    student_id=student_id,
-                    name=student_name,
-                    score=round(float(score), 4),
-                    top_candidates=top_candidates,
-                    liveness={
-                        "is_real": bool(is_real),
-                        "spoof_score": round(float(spoof_score), 4),
-                    },
-                    decision=decision,
-                    bbox={
-                        "x": bbox.get("x", 0),
-                        "y": bbox.get("y", 0),
-                        "w": bbox.get("w", 0),
-                        "h": bbox.get("h", 0),
-                        "confidence": float(bbox.get("confidence", 0.0))  
-                    } if bbox else None
-                )
-            )
+        results = run_recognition_on_frame(frame)
 
         return RecognizeResponse(
             status="success",
-            message=f"Đã xử lý {len(faces_with_bbox)} khuôn mặt.",
+            message=f"Đã xử lý {len(results)} khuôn mặt.",
             data=results
         )
 
     except Exception as e:
         logger.error(f"Lỗi recognize: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Lỗi server khi xử lý nhận diện")
+
+
+@router.websocket("/ws/recognize")
+async def recognize_stream(websocket: WebSocket):
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=1008, reason="Missing token")
+        return
+
+    try:
+        verify_access_token(token)
+    except HTTPException:
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+
+    await websocket.accept()
+    logger.info("WS recognize connected")
+
+    try:
+        while True:
+            raw_message = await websocket.receive_text()
+            payload = json.loads(raw_message)
+            msg_type = payload.get("type")
+
+            if msg_type == "ping":
+                await websocket.send_json({"type": "pong", "ts": int(datetime.utcnow().timestamp() * 1000)})
+                continue
+
+            if msg_type != "frame":
+                await websocket.send_json({"type": "error", "message": "Unsupported message type"})
+                continue
+
+            frame_id = payload.get("frame_id")
+            image_b64 = payload.get("image")
+            track_hints = payload.get("track_hints") or []
+
+            try:
+                frame = _decode_ws_image_to_frame(image_b64)
+                results = run_recognition_on_frame(frame)
+                result_dicts = [_model_to_dict(item) for item in results]
+                result_dicts = _attach_track_ids_from_hints(result_dicts, track_hints)
+
+                await websocket.send_json({
+                    "type": "recognize_result",
+                    "frame_id": frame_id,
+                    "results": result_dicts,
+                })
+            except Exception as e:
+                logger.error(f"WS recognize frame error: {str(e)}", exc_info=True)
+                await websocket.send_json({
+                    "type": "error",
+                    "frame_id": frame_id,
+                    "message": str(e),
+                })
+    except WebSocketDisconnect:
+        logger.info("WS recognize disconnected")
+    except Exception as e:
+        logger.error(f"WS recognize fatal error: {str(e)}", exc_info=True)
+        try:
+            await websocket.close(code=1011, reason="Internal error")
+        except Exception:
+            pass
+
+
+@router.websocket("/ws/realtime/{session_id}")
+async def realtime_track_stream(websocket: WebSocket, session_id: str):
+    """
+    Realtime WS theo session (Mode B: backend detect + track):
+    - FE gửi full frame (JPEG base64)
+    - Backend detect + assign track_id + (throttle) recognize theo track
+    - Backend trả về tracks với bbox + result để FE vẽ overlay liên tục
+    """
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=1008, reason="Missing token")
+        return
+
+    try:
+        verify_access_token(token)
+    except HTTPException:
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+
+    await websocket.accept()
+    logger.info(f"WS realtime connected session_id={session_id}")
+
+    # Init / attach session tracker state
+    session = _realtime_sessions.get(session_id)
+    if not session:
+        session = {
+            "tracks": [],
+            "last_seen_ms": _now_ms(),
+            "last_detect_ms": 0,
+            # Cache student_ids already marked in this WS session to avoid repeated DB checks
+            # and to allow the frontend to skip already-marked events in telemetry.
+            "attended_student_ids": set(),
+        }
+        _realtime_sessions[session_id] = session
+    tracks: List[dict] = session["tracks"]
+    attended_student_ids: set = session.get("attended_student_ids") or set()
+    session["attended_student_ids"] = attended_student_ids
+
+    try:
+        while True:
+            raw_message = await websocket.receive_text()
+            payload = json.loads(raw_message)
+            msg_type = payload.get("type")
+
+            if msg_type == "ping":
+                await websocket.send_json({"type": "pong", "ts": int(datetime.utcnow().timestamp() * 1000)})
+                continue
+
+            if msg_type != "frame":
+                await websocket.send_json({"type": "error", "message": "Unsupported message type"})
+                continue
+            frame_id = payload.get("frame_id")
+            image_b64 = payload.get("image")
+
+            try:
+                now_ms = _now_ms()
+                session["last_seen_ms"] = now_ms
+
+                frame = _decode_ws_image_to_frame(image_b64)
+
+                # 1) Update trackers every WS frame to keep bbox smooth.
+                for tr in tracks:
+                    tracker = tr.get("tracker")
+                    if tracker is None:
+                        continue
+                    try:
+                        ok, box = tracker.update(frame)
+                        if ok and box is not None:
+                            x, y, w, h = box
+                            tr["bbox"] = {
+                                "x": float(x),
+                                "y": float(y),
+                                "w": float(w),
+                                "h": float(h),
+                                "confidence": float(tr.get("bbox", {}).get("confidence", 0.0) if tr.get("bbox") else 0.0),
+                            }
+                            tr["last_seen_ms"] = now_ms
+                    except Exception:
+                        # Tracker may fail on some frames; keep last bbox until next detect refresh.
+                        pass
+
+                # 2) Run heavy face detection at a lower rate to correct tracker drift and discover new faces.
+                detect_interval_ms = max(120, int(REALTIME_WS_DETECT_INTERVAL_MS))
+                should_detect = (now_ms - int(session.get("last_detect_ms", 0))) >= detect_interval_ms
+
+                detections: List[dict] = []
+                if should_detect:
+                    session["last_detect_ms"] = now_ms
+                    faces_with_bbox = face_service.detect(frame)
+                    for face_img, bbox in faces_with_bbox:
+                        detections.append({
+                            "face": face_img,
+                            "bbox": {
+                                "x": bbox.get("x", 0),
+                                "y": bbox.get("y", 0),
+                                "w": bbox.get("w", 0),
+                                "h": bbox.get("h", 0),
+                                "confidence": float(bbox.get("confidence", 0.0)),
+                            } if bbox else None,
+                        })
+
+                # Drop stale tracks
+                track_ttl_ms = max(600, int(REALTIME_WS_TRACK_TTL_MS))
+                tracks[:] = [
+                    tr for tr in tracks
+                    if now_ms - int(tr.get("last_seen_ms", now_ms)) <= track_ttl_ms
+                ]
+
+                if detections:
+                    # Match detections to existing tracks
+                    det_to_track, used_det, used_track = _match_detections_to_tracks(detections, tracks)
+
+                    # Update matched tracks (and refresh trackers)
+                    for det_idx, tr_idx in det_to_track.items():
+                        det = detections[det_idx]
+                        tr = tracks[tr_idx]
+                        tr["bbox"] = det["bbox"]
+                        tr["last_seen_ms"] = now_ms
+                        tr["seen_count"] = int(tr.get("seen_count", 0)) + 1
+                        tr["face"] = det["face"]
+
+                        tracker = _create_cv2_tracker()
+                        if tracker is not None and det.get("bbox"):
+                            try:
+                                b = det["bbox"]
+                                tracker.init(frame, (float(b["x"]), float(b["y"]), float(b["w"]), float(b["h"])))
+                                tr["tracker"] = tracker
+                            except Exception:
+                                tr["tracker"] = None
+
+                    # Create new tracks for unmatched detections
+                    for det_idx, det in enumerate(detections):
+                        if det_idx in used_det:
+                            continue
+                        tracker = _create_cv2_tracker()
+                        if tracker is not None and det.get("bbox"):
+                            try:
+                                b = det["bbox"]
+                                tracker.init(frame, (float(b["x"]), float(b["y"]), float(b["w"]), float(b["h"])))
+                            except Exception:
+                                tracker = None
+                        tracks.append({
+                            "track_id": f"trk-{uuid4().hex[:10]}",
+                            "bbox": det["bbox"],
+                            "last_seen_ms": now_ms,
+                            "seen_count": 1,
+                            "last_recognized_ms": 0,
+                            "result": None,
+                            "face": det["face"],
+                            "tracker": tracker,
+                        })
+
+                # Recognition throttle per track
+                recognize_cooldown_ms = max(250, int(REALTIME_WS_RECOGNIZE_COOLDOWN_MS))
+                outbound_tracks = []
+                for tr in tracks:
+                    face_img = tr.get("face")
+                    per_track_cooldown_ms = int(tr.get("recognize_cooldown_ms", 0) or 0)
+                    effective_cooldown_ms = max(recognize_cooldown_ms, per_track_cooldown_ms)
+                    should_recognize = (
+                        face_img is not None
+                        and now_ms - int(tr.get("last_recognized_ms", 0)) >= effective_cooldown_ms
+                    )
+
+                    if should_recognize:
+                        result_model = run_recognition_on_face_crop(face_img)
+                        tr["last_recognized_ms"] = now_ms
+                        result_dict = _model_to_dict(result_model) if result_model else None
+
+                        # If this student was already marked in this session (or earlier today),
+                        # annotate the result and increase cooldown to reduce repeated work.
+                        if isinstance(result_dict, dict) and result_dict.get("student_id"):
+                            sid = result_dict.get("student_id")
+                            if sid in attended_student_ids:
+                                result_dict["attendance_status"] = "ALREADY_MARKED"
+                                # Slow down repeated recognitions for already-marked tracks.
+                                tr["recognize_cooldown_ms"] = max(int(tr.get("recognize_cooldown_ms", 0) or 0), 3000)
+                            else:
+                                # Mark attendance once per session for this student.
+                                try:
+                                    marked = attendance_service.mark_attendance(sid)
+                                except Exception:
+                                    marked = False
+                                attended_student_ids.add(sid)
+                                result_dict["attendance_status"] = "MARKED" if marked else "ALREADY_MARKED"
+                                # After first mark, further recognitions can be slower.
+                                tr["recognize_cooldown_ms"] = max(int(tr.get("recognize_cooldown_ms", 0) or 0), 2500)
+
+                        tr["result"] = result_dict
+
+                    # Do not keep raw face in memory across ticks
+                    tr["face"] = None
+
+                    outbound_tracks.append({
+                        "track_id": tr.get("track_id"),
+                        "bbox": tr.get("bbox"),
+                        "result": tr.get("result"),
+                        "last_seen_ms": tr.get("last_seen_ms"),
+                    })
+
+                await websocket.send_json({
+                    "type": "frame_result",
+                    "session_id": session_id,
+                    "frame_id": frame_id,
+                    "tracks": outbound_tracks,
+                })
+            except Exception as e:
+                logger.error(f"WS realtime frame error: {str(e)}", exc_info=True)
+                await websocket.send_json({
+                    "type": "error",
+                    "session_id": session_id,
+                    "frame_id": frame_id,
+                    "message": str(e),
+                })
+    except WebSocketDisconnect:
+        logger.info(f"WS realtime disconnected session_id={session_id}")
+    except Exception as e:
+        logger.error(f"WS realtime fatal error session_id={session_id}: {str(e)}", exc_info=True)
+        try:
+            await websocket.close(code=1011, reason="Internal error")
+        except Exception:
+            pass
+    finally:
+        # Best-effort cleanup: drop empty/idle sessions
+        try:
+            session = _realtime_sessions.get(session_id)
+            if session:
+                session["tracks"] = []
+                session["last_seen_ms"] = _now_ms()
+                session["attended_student_ids"] = set()
+        except Exception:
+            pass
 
 # ====================== LIVENESS DETECTION ======================
 @router.post("/face/liveness-check")
@@ -879,15 +1536,27 @@ async def liveness_check(file: UploadFile = File(...)):
         
         # Gọi hàm liveness mới
         embedding, is_real, spoof_score = face_service.get_embedding_with_liveness(face_image)
-        
+
+        should_reject, reject_reason, face_area_ratio, suspect_threshold = should_reject_liveness(
+            is_real,
+            spoof_score,
+            bbox=bbox,
+            frame_shape=frame.shape,
+        )
+        is_live_pass = not should_reject
+
         return {
             "status": "success",
             "message": "Liveness check completed",
             "data": {
-                "is_real": is_real,
+                "is_real": is_live_pass,
                 "spoof_score": round(float(spoof_score), 4),
-                "verdict": "✅ Người thật" if is_real else "❌ Có dấu hiệu giả mạo (ảnh/video/mask)",
-                "recommendation": "Vui lòng nhìn thẳng camera và nháy mắt nếu bị từ chối" if not is_real else None,
+                "reject_reason": reject_reason if should_reject else None,
+                "face_area_ratio": round(float(face_area_ratio), 4),
+                "suspect_threshold": round(float(suspect_threshold), 4),
+                "hard_threshold": round(float(SPOOF_REJECT_THRESHOLD), 4),
+                "verdict": "✅ Người thật" if is_live_pass else "❌ Có dấu hiệu giả mạo (ảnh/video/mask)",
+                "recommendation": "Vui lòng nhìn thẳng camera và nháy mắt nếu bị từ chối" if not is_live_pass else None,
                 "bbox": bbox
             }
         }

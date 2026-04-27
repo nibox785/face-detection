@@ -1,86 +1,82 @@
-# 💻 Frontend
+# Frontend Documentation
 
-## Mục tiêu frontend
-Frontend là giao diện quản lý cho hệ thống điểm danh khuôn mặt, bao gồm:
-- Đăng nhập admin
-- Đăng ký sinh viên với ảnh/camera
-- Điểm danh tự động bằng webcam
-- Xem danh sách sinh viên
-- Xem lịch sử điểm danh
-- Xuất báo cáo CSV
-- Xóa và sửa thông tin sinh viên
+## 1) Tong quan
 
-## Công nghệ chính
-- React 18
-- Vite
-- HTML/CSS cho giao diện
-- Fetch API để kết nối với backend FastAPI
+Frontend dung React + Vite, chia thanh 3 tab chinh sau khi dang nhap:
 
-## Cấu trúc thư mục
-`frontend/`
-- `package.json` - cấu hình dự án React/Vite
-- `index.html` - điểm vào ứng dụng
-- `src/`
-  - `main.jsx` - render React app và bọc `AuthProvider`
-  - `App.jsx` - điều hướng tab và hiển thị các panel chính
-  - `styles.css` - style toàn cục
-  - `context/AuthContext.jsx` - quản lý authentication token và trạng thái đăng nhập
-  - `api/apiClient.js` - helper gửi request tới backend và thêm `Authorization` header
-  - `components/features/`
-    - `LoginPanel.jsx` - form đăng nhập admin
-    - `RegisterPanel.jsx` - form đăng ký sinh viên, chụp ảnh bằng camera và gửi ảnh lên backend
-    - `AttendancePanel.jsx` - điểm danh tự động bằng webcam, hiển thị log và xuất CSV
-    - `StudentsPanel.jsx` - hiển thị danh sách sinh viên, chỉnh sửa tên, xóa sinh viên và lịch sử điểm danh
+- Dang ky
+- Diem danh
+- Danh sach
 
-## Luồng chính
-1. Người dùng mở ứng dụng.
-2. `AuthProvider` đọc token từ `localStorage`.
-3. Nếu chưa đăng nhập, hiển thị `LoginPanel`.
-4. Sau khi đăng nhập thành công, app chuyển đến giao diện chính.
-5. Người dùng chọn tab:
-   - `Đăng ký`: dùng `RegisterPanel` để gửi ảnh đăng ký sinh viên lên `/api/dataset/register`.
-   - `Điểm danh`: dùng `AttendancePanel` để mở camera và gửi ảnh đến `/api/recognize` định kỳ.
-   - `Danh sách`: dùng `StudentsPanel` để xem sinh viên, lịch sử điểm danh, sửa tên và xóa sinh viên.
+Tat ca request backend di qua `src/api/apiClient.js`.
 
-## Chi tiết các file quan trọng
-### `src/main.jsx`
-- Render `App` vào `#root`.
-- Bọc app bằng `AuthProvider` để cung cấp auth state toàn cục.
+## 2) Cau truc chinh
 
-### `src/App.jsx`
-- Quản lý tab UI.
-- Tải dữ liệu sinh viên và điểm danh khi chọn tab `students`.
-- Hiển thị `LoginPanel` nếu chưa auth.
-- Gọi `logout()` tại nút đăng xuất.
+`frontend/src/`
 
-### `src/context/AuthContext.jsx`
-- Lưu token trong `localStorage` với `setToken` / `clearToken`.
-- Cung cấp `isAuthenticated`, `login`, `logout`, `isLoading`.
+- `main.jsx`: mount app va boc `AuthProvider`.
+- `App.jsx`: tab navigation, load students/attendance, logout.
+- `context/AuthContext.jsx`: bootstrap token, verify token, logout on close.
+- `api/apiClient.js`: API_BASE, token helper, `apiFetch`, auth helper.
+- `components/features/`:
+  - `LoginPanel.jsx`
+  - `RegisterPanel.jsx`
+  - `AttendancePanel.jsx`
+  - `StudentsPanel.jsx`
 
-### `src/api/apiClient.js`
-- `API_BASE` trỏ đến `http://127.0.0.1:8000/api`.
-- `authHeaders()` thêm header `Authorization: Bearer <token>`.
-- `apiFetch()` gửi request và xử lý lỗi 401 tự động.
+## 3) Auth flow
 
-### `src/components/features/LoginPanel.jsx`
-- Gửi request POST `/login`.
-- Lưu token lên context khi đăng nhập thành công.
+1. App khoi dong, `AuthContext` doc token tu `sessionStorage`.
+2. Neu co token, goi `/api/auth/verify` de xac thuc.
+3. Neu token sai/het han, tu clear token va quay ve login.
+4. Dang xuat:
+   - goi `/api/logout`,
+   - clear token,
+   - co `bestEffortLogoutOnClose` khi dong tab.
 
-### `src/components/features/RegisterPanel.jsx`
-- Mở camera, chụp ảnh và tạo `FormData`.
-- Gọi `apiFetch('/dataset/register', { method: 'POST', body: formData })`.
-- Reset form và gọi `onRegisterSuccess` khi thành công.
+Luu y: token dang la session-only (khong dung localStorage de auto-login lai sau khi dong tab).
 
-### `src/components/features/AttendancePanel.jsx`
-- Mở webcam, chụp ảnh và gửi định kỳ lên `/recognize`.
-- Hiển thị log trạng thái, kết quả nhận diện, và lỗi.
-- Cho phép xuất CSV từ `/attendance/export`.
+## 4) RegisterPanel hien tai
 
-### `src/components/features/StudentsPanel.jsx`
-- Hiển thị danh sách sinh viên và lịch sử điểm danh.
-- Tạo modal chỉnh sửa tên.
-- Gọi API `PUT /students/{id}` để cập nhật tên và `DELETE /students/{id}` để xóa.
+`RegisterPanel.jsx` da doi sang luong burst capture:
 
+- Muc tieu thu 10 frame (`TARGET_FRAMES=10`).
+- Co preview check mot so frame bang `/api/face/check`.
+- Gui tat ca frame qua `/api/dataset/register-multiple`.
+- Ho tro MSSV, reset state, dong camera sau khi dang ky thanh cong.
 
-## Đề xuất mở rộng
-- Đồng bộ trạng thái xóa/sửa với `students` và `attendance` ngay tức thì.
+## 5) AttendancePanel hien tai
+
+`AttendancePanel.jsx` thuc hien:
+
+- Overlay bbox smooth bang tracking + prediction ngan (20-30 FPS draw loop).
+- Recognize realtime qua WebSocket (Mode B): FE gui frame, backend detect + tracking va tra `track_id + bbox + result`.
+- Telemetry realtime: FPS, API calls/phut, latency gan nhat, latency trung binh.
+- Decision stats: `AUTO_MARK`, `MANUAL_REVIEW`, `REJECT`.
+- Hien top-3 candidates va score bar.
+- Import danh sach lop tu Excel, export ket qua diem danh ra Excel.
+- Export du lieu session:
+  - JSON (`session_metrics_*.json`)
+  - Excel telemetry.
+
+## 6) StudentsPanel hien tai
+
+- Hien danh sach sinh vien + MSSV.
+- Hien lich su diem danh (20 ban ghi moi nhat tren UI).
+- Ho tro sua ten va xoa sinh vien.
+- Co refresh du lieu theo nhu cau.
+
+## 7) API client
+
+Trong `apiClient.js`:
+
+- `API_BASE = http://127.0.0.1:8000/api`
+- `authHeaders()` tu dong chen Bearer token.
+- `apiFetch()` tu dong xu ly 401 (clear token + reload).
+- Khong set `Content-Type` thu cong khi gui `FormData`.
+- WebSocket URL duoc build tu server origin (khong bao gom `/api`) vi WS endpoint nam o root: `/ws/...`.
+
+## 8) Luu y dong bo frontend-backend
+
+- Payload update student can duoc giu dong bo voi contract backend (`PUT /students/{student_id}`).
+- Neu thay doi contract API, can cap nhat `apiClient` va panel lien quan cung luc.

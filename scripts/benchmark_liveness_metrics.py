@@ -16,6 +16,7 @@ from face_engine.facenet.detect import detect_faces
 from face_engine.facenet.embedding import get_embedding_with_liveness
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+DEFAULT_SPOOF_REJECT_THRESHOLD = 0.65
 
 
 def read_image(path: Path):
@@ -53,7 +54,7 @@ def select_best_face(faces_with_bbox: List[Tuple[np.ndarray, dict]]):
     return max(faces_with_bbox, key=score)
 
 
-def evaluate_folder(folder: Path, ground_truth: str):
+def evaluate_folder(folder: Path, ground_truth: str, spoof_reject_threshold: float):
     rows = []
     for image_path in iter_images(folder):
         row = {
@@ -90,7 +91,11 @@ def evaluate_folder(folder: Path, ground_truth: str):
             _embedding, is_real, spoof_score = get_embedding_with_liveness(face_image)
             row["is_real"] = bool(is_real)
             row["spoof_score"] = float(spoof_score)
-            row["predicted"] = "bona_fide" if is_real else "attack"
+            row["predicted"] = (
+                "bona_fide"
+                if (bool(is_real) and float(spoof_score) < float(spoof_reject_threshold))
+                else "attack"
+            )
 
         except Exception as e:
             row["error"] = str(e)
@@ -148,6 +153,12 @@ def main():
     parser.add_argument("--dataset", default="dataset/liveness_eval", help="Dataset root containing bona_fide/ and attack/")
     parser.add_argument("--output", default="benchmarks/liveness_report.json", help="Output JSON report")
     parser.add_argument("--details", default="benchmarks/liveness_samples.json", help="Per-sample output JSON")
+    parser.add_argument(
+        "--spoof-threshold",
+        type=float,
+        default=DEFAULT_SPOOF_REJECT_THRESHOLD,
+        help="Reject as attack if spoof_score >= threshold (used with is_real gate)",
+    )
     args = parser.parse_args()
 
     dataset_root = Path(args.dataset)
@@ -160,13 +171,17 @@ def main():
         )
 
     rows = []
-    rows.extend(evaluate_folder(bona_dir, "bona_fide"))
-    rows.extend(evaluate_folder(attack_dir, "attack"))
+    rows.extend(evaluate_folder(bona_dir, "bona_fide", args.spoof_threshold))
+    rows.extend(evaluate_folder(attack_dir, "attack", args.spoof_threshold))
 
     metrics = compute_metrics(rows)
 
     payload = {
         "dataset": str(dataset_root),
+        "policy": {
+            "predicted_bona_fide_if": "is_real == True and spoof_score < spoof_threshold",
+            "spoof_threshold": args.spoof_threshold,
+        },
         "metrics": metrics,
     }
 
