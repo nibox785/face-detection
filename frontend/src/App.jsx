@@ -184,7 +184,7 @@ function App() {
           </div>
 
           <div className="header-actions">
-            <button className="btn btn-ghost" onClick={handleLogout}>
+            <button className="btn btn-ghost btn-ghost--inverse" onClick={handleLogout}>
               Đăng xuất
             </button>
           </div>

@@ -101,19 +101,44 @@ register_service = RegisterService()
 # Lưu embeddings cache (sẽ được cập nhật từ main.py)
 embeddings_cache: List[tuple] = []
 
-def update_embeddings_cache():
-    """Reload embeddings cache từ database và rebuild FAISS index"""
+def update_embeddings_cache(rebuild_faiss: bool = True):
+    """Reload embeddings cache từ database và optionally rebuild FAISS index."""
     global embeddings_cache
     embeddings_cache.clear()
     embeddings_cache.extend(get_all_embeddings())
     logger.info(f"📦 Đã update cache: {len(embeddings_cache)} embeddings")
     
     # Rebuild FAISS index
+    if rebuild_faiss:
+        try:
+            from backend.main import init_faiss_index
+            init_faiss_index()
+        except Exception as e:
+            logger.warning(f"⚠️ Cannot rebuild FAISS index: {str(e)}")
+
+
+def _append_embeddings_runtime_cache(student_id: int, embeddings: List[np.ndarray]) -> None:
+    """Fast-path: update in-memory cache + FAISS without full reload."""
+    if not student_id or not embeddings:
+        return
+
+    pairs = [(int(student_id), emb) for emb in embeddings if emb is not None]
+    if not pairs:
+        return
+
     try:
-        from backend.main import faiss_index, init_faiss_index
-        init_faiss_index()
+        embeddings_cache.extend(pairs)
+    except Exception:
+        # If cache is in an unexpected state, caller can force reload later.
+        pass
+
+    # Incrementally add to FAISS if available.
+    try:
+        from backend.main import faiss_index
+        if faiss_index is not None:
+            faiss_index.add_embeddings(pairs)
     except Exception as e:
-        logger.warning(f"⚠️ Cannot rebuild FAISS index: {str(e)}")
+        logger.warning(f"⚠️ Cannot incremental-add to FAISS: {str(e)}")
 
 # ====================== HELPER FUNCTIONS ======================
 def validate_image_file(file: UploadFile, max_size: int = MAX_FILE_SIZE) -> bool:
@@ -806,8 +831,9 @@ async def register(
     success, message, student_id = register_service.register_student(name, file=file)
 
     if success:
-        # Reload cache
-        update_embeddings_cache()
+        # Fast-path: avoid full reload/rebuild per registration.
+        # Keep old behavior available via manual cache reload if needed.
+        update_embeddings_cache(rebuild_faiss=False)
 
         return RegisterResponse(
             status="success",
@@ -870,8 +896,8 @@ async def register_dataset(
 
         save_dataset_image(name, file.filename or f"{name}.jpg", contents)
 
-        # Reload cache
-        update_embeddings_cache()
+        # Fast-path: avoid full reload/rebuild per registration.
+        update_embeddings_cache(rebuild_faiss=False)
 
         return RegisterResponse(
             status="success",
@@ -1082,8 +1108,11 @@ async def register_dataset_multiple(
                 )
             )
 
-        # Reload cache
-        update_embeddings_cache()
+        # Fast-path: update runtime cache + incremental FAISS add for new embeddings.
+        try:
+            _append_embeddings_runtime_cache(student_id, [c["embedding"] for c in selected_candidates if c.get("embedding") is not None])
+        except Exception:
+            pass
 
         logger.info(
             f"✅ Đăng ký múltiplo thành công - Student ID: {student_id} | Name: {name} | "
@@ -1659,18 +1688,29 @@ async def export_attendance(
     get_current_admin(authorization)
     records = get_attendance_range(start_date, end_date)
 
-    # Tạo CSV
-    output = StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["ID", "Student_ID", "Name", "Timestamp"])
-    for r in records:
-        writer.writerow([r.get("id"), r.get("student_id"), r.get("name"), r.get("timestamp")])
+    # Tạo DataFrame từ records
+    import pandas as pd
+    df = pd.DataFrame(records)
 
+    # Đổi tên cột cho đẹp
+    df = df.rename(columns={
+        'id': 'ID',
+        'student_id': 'Student_ID',
+        'name': 'Name',
+        'timestamp': 'Timestamp'
+    })
+
+    # Tạo Excel in-memory
+    from io import BytesIO
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, sheet_name='Attendance', index=False)
     output.seek(0)
+
     return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=attendance_report.csv"}
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=attendance_report.xlsx"}
     )
 
 

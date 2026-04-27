@@ -109,6 +109,28 @@ function StudentsPanel({ students, attendance, onRefresh }) {
     }
   }
 
+  // Xuất Excel điểm danh từ database
+  async function handleExportAttendance() {
+    try {
+      const response = await apiFetch('/attendance/export');
+      if (!response.ok) {
+        throw new Error('Export failed');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `DiemDanh_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Export error:', error);
+      alert('Có lỗi khi xuất Excel điểm danh');
+    }
+  }
+
   return (
     <div className="panel-grid">
       <ConfirmDialog
@@ -128,9 +150,14 @@ function StudentsPanel({ students, attendance, onRefresh }) {
       <section className="panel-card">
         <div className="panel-header">
           <h2>Danh sách sinh viên ({students.length})</h2>
-          <button type="button" className="btn btn-secondary" onClick={onRefresh}>
-            Tải lại
-          </button>
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <button type="button" className="btn btn-secondary" onClick={onRefresh}>
+              Tải lại
+            </button>
+            <button type="button" className="btn btn-success" onClick={handleExportAttendance}>
+              📤 Xuất file Excel điểm danh
+            </button>
+          </div>
         </div>
 
         <div className="list-box">

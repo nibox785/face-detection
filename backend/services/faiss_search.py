@@ -88,6 +88,38 @@ class FAISSEmbeddingIndex:
             logger.error(f"❌ Error building FAISS index: {str(e)}", exc_info=True)
             self.is_built = False
             raise
+
+    def add_embeddings(self, new_embeddings: List[Tuple[int, np.ndarray]]) -> None:
+        """
+        Incrementally add embeddings to an existing index.
+        Falls back to build() if index is not built yet.
+        """
+        if not new_embeddings:
+            return
+
+        # If not built yet, build from scratch with these embeddings.
+        if not self.is_built or self.index is None:
+            self.build(new_embeddings)
+            return
+
+        try:
+            vectors = np.array([emb for _, emb in new_embeddings], dtype=np.float32)
+            if vectors.ndim == 1:
+                vectors = vectors.reshape(1, -1)
+            if vectors.shape[1] != self.dim:
+                raise ValueError(
+                    f"Embedding dimension mismatch: expected {self.dim}, got {vectors.shape[1]}"
+                )
+
+            self.index.add(vectors)
+            self.embeddings_list.extend([emb for _, emb in new_embeddings])
+            self.student_ids.extend([sid for sid, _ in new_embeddings])
+            self.is_built = True
+            logger.info(f"➕ FAISS index add: +{len(new_embeddings)} (total={self.index.ntotal})")
+        except Exception as e:
+            logger.error(f"❌ Error adding embeddings to FAISS index: {str(e)}", exc_info=True)
+            # Keep index usable; caller may choose to rebuild later.
+            raise
     
     def search(
         self,
