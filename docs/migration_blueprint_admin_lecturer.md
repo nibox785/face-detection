@@ -2,6 +2,70 @@
 
 Ngay cap nhat: 2026-04-27
 
+## 0) Hiểu rõ hệ thống - Cấu trúc và logic quan trọng
+
+### 0.1 Cấu trúc folder và file quan trọng
+
+- **backend/**: Chứa code backend FastAPI.
+  - `main.py`: Entry point server.
+  - `api/routes.py`: Định nghĩa API endpoints (register, recognize, attendance).
+  - `services/face_service.py`: Logic xử lý face (detect, embedding, liveness).
+  - `database/`: Models, schemas cho DB (SQLite).
+
+- **face_engine/**: Core AI cho face processing.
+  - `facenet/detect.py`: Phát hiện khuôn mặt dùng DeepFace RetinaFace.
+  - `facenet/embedding.py`: Trích xuất embedding dùng Facenet512, và liveness detection.
+  - `utils.py`: Utilities chung.
+
+- **core/**: Config và constants.
+  - `config.py`: Cấu hình hệ thống.
+
+- **scripts/**: Benchmark và tools.
+  - `benchmark_liveness_metrics.py`: Đánh giá anti-spoofing.
+  - `benchmark_threshold.py`: Tìm ngưỡng nhận diện.
+
+- **benchmarks/**: Kết quả benchmark (JSON reports).
+
+- **dataset/**: Dữ liệu training/eval (liveness_eval cho anti-spoof).
+
+- **frontend/**: UI React/Vite.
+
+### 0.2 Phân tích code quan trọng
+
+#### Face Detection (`face_engine/facenet/detect.py`)
+- Sử dụng DeepFace với RetinaFace backend.
+- Trả về list (face_image, bbox) với confidence > 0.7.
+- Không dùng anti_spoofing ở đây (chỉ detect).
+
+#### Embedding Extraction (`face_engine/facenet/embedding.py`)
+- `get_embedding()`: Resize face to 160x160, dùng Facenet512, normalize embedding.
+- `get_embedding_with_liveness()`: Chạy detect với anti_spoofing=True để lấy is_real, spoof_score.
+
+#### Face Service (`backend/services/face_service.py`)
+- Wrapper cho detect, embedding, liveness.
+- Threshold mặc định 0.7 cho nhận diện.
+
+#### Anti-Spoofing Logic
+- Dùng DeepFace anti_spoofing với opencv detector.
+- Trả về is_real (bool), spoof_score (float, 0-1).
+- Reject nếu spoof_score >= threshold (mặc định 0.65, nhưng benchmark dùng 0.92).
+
+### 0.3 Xử lý hình ảnh trích xuất đặc trưng phát hiện sinh viên đeo khẩu trang
+
+- **Model sử dụng**: Facenet512 từ DeepFace, được train trên MS-Celeb-1M, có khả năng robust với occlusion như khẩu trang (nhưng không tối ưu).
+- **Detection**: RetinaFace detect faces ngay cả khi có khẩu trang (landmarks bao gồm mắt, mũi).
+- **Embedding**: Facenet512 trích xuất 512D vector từ face 160x160. Không có preprocessing đặc biệt cho mask, nhưng model generalize tốt.
+- **Code chính**: `get_embedding()` trong `embedding.py` - resize, convert RGB, represent với Facenet512.
+
+### 0.4 Anti-Spoofing: Phát hiện spoof qua đâu, ngưỡng
+
+- **Phương pháp**: Dùng DeepFace anti_spoofing module, phân tích texture, motion, depth cues từ face image.
+- **Detector**: opencv backend cho liveness.
+- **Output**: is_real (True nếu real), spoof_score (0.0 = real, 1.0 = spoof).
+- **Ngưỡng**: Mặc định 0.65 (script), nhưng benchmark dùng 0.92 để balance APCER/BPCER.
+- **Logic reject**: Nếu is_real=False hoặc spoof_score >= threshold, reject.
+- **Code**: `get_embedding_with_liveness()` gọi DeepFace.extract_faces với anti_spoofing=True.
+
 ## 1) Muc tieu migrate
 
 - Thay doi mo hinh truy cap: khong con 1 admin hardcoded duy nhat.

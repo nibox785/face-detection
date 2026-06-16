@@ -6,6 +6,7 @@ Database dung SQLite, file mac dinh: `attendance.db`.
 
 Layer thao tac DB tap trung tai `backend/database/db.py`.
 
+
 ## 2) Schema hien tai
 
 ### `students`
@@ -63,11 +64,62 @@ Khi doc, he thong van fallback duoc du lieu cu luu bang pickle.
 - Token revoke:
 	- `revoke_token`, `is_token_revoked`, `cleanup_revoked_tokens`
 
-## 6) Timezone note
+## 6) # Entity Relationship Diagram
+
+Student
+│
+├── Embedding
+│
+└── Attendance
+
+Relationships:
+
+Student 1:N Embedding
+
+Student 1:N Attendance
+
+## 7) Data Ownership
+
+Students
+
+Stores:
+
+- Student information
+- Registration metadata
+
+Embeddings
+
+Stores:
+
+- Face embeddings
+- FAISS mapping data
+
+Attendance
+
+Stores:
+
+- Attendance history
+- Attendance timestamps
+
+## 8) Migration Strategy
+
+Current:
+SQLite
+
+Future:
+PostgreSQL
+
+Reason:
+
+- Better concurrency
+- Better indexing
+- Production deployment
+
+## 9) Timezone note
 
 Attendance insert/check theo ngay dang su dung timezone UTC+7 (`VIETNAM_TZ`) trong `db.py`.
 
-## 7) Luu y van hanh
+## 10) Luu y van hanh
 
 - Luon bat `PRAGMA foreign_keys = ON` (da bat trong `get_connection()`).
 - Xoa student chi can xoa bang `students`, du lieu lien quan duoc cascade.

@@ -1,31 +1,36 @@
 # Face Attendance System
 
-He thong diem danh khuon mat (FastAPI + React) voi nhan dien FaceNet512/DeepFace, liveness gate, FAISS search va SQLite.
+## Overview
 
-## Tong quan
-- Frontend React (Vite) gui frame camera len backend.
-- Backend detect khuon mat (RetinaFace), trich xuat embedding (Facenet512), kiem tra liveness, nhan dien bang cosine similarity + FAISS.
-- Ket qua diem danh va du lieu sinh vien duoc luu vao SQLite `attendance.db`.
-
-## Tinh nang hien tai
-- Dang nhap/kiem tra phien dang nhap admin bang JWT.
-- Dang ky sinh vien theo 1 anh hoac nhieu anh (10 frame) va luu dataset.
-- Kiem tra nhanh khuon mat truoc dang ky (`/face/check`).
-- Liveness check rieng (`/face/liveness-check`).
-- Diem danh realtime (`/recognize`) voi top-3 ung vien va decision (`AUTO_MARK`, `MANUAL_REVIEW`, `REJECT`).
-- Diem danh realtime qua WebSocket theo `track_id` (FE giu bbox local): `GET /api/ws/realtime/{session_id}?token=...`.
-- Quan ly sinh vien: xem danh sach, lay chi tiet, doi ten, xoa.
-- Xem lich su diem danh, loc theo student/date, export CSV.
-- Token revoke duoc luu ben vung trong bang `revoked_tokens`.
-
-## Cong nghe
-- Backend: Python, FastAPI, Uvicorn
-- AI/CV: OpenCV, DeepFace (RetinaFace + Facenet512)
+Face Attendance System là một dự án demo điểm danh bằng nhận diện khuôn mặt, xây dựng với:
+- Backend: FastAPI
+- Frontend: React + Vite
+- AI: DeepFace / RetinaFace / FaceNet512
 - Search: FAISS
-- Frontend: React 18, Vite
 - Database: SQLite
 
-## Cau truc thu muc chinh
+Hệ thống minh họa một pipeline nhận diện khuôn mặt đầy đủ, từ detect và embedding đến search, liveness check và attendance logging.
+
+## What this repository shows
+
+- Kiến trúc clean tách biệt API, business logic, AI engine và database.
+- Khả năng thay đổi model mà không làm vỡ contract API.
+- Sử dụng FAISS để tăng tốc tìm kiếm embedding.
+- Data flow rõ ràng cho register, recognize và attendance.
+- Benchmark và test coverage cơ bản.
+
+## Current capabilities
+
+- JWT auth cho admin.
+- Register sinh viên và lưu khuôn mặt.
+- Nhận diện mặt realtime / ảnh tĩnh.
+- Liveness check và decision logic.
+- Attendance logging theo ngày.
+- Quản lý sinh viên, xem lịch sử attendance.
+- WebSocket realtime support.
+
+## Project structure
+
 ```text
 face-detection/
 |-- backend/
@@ -46,16 +51,27 @@ face-detection/
 |   |-- database.md
 |   |-- frontend.md
 |   |-- roadmap.md
-|   `-- roadmap_v2.md
+|   |-- 01-project-overview.md
+|   |-- 02-user-requirements.md
+|   |-- 03-features.md
+|   |-- 04-tech-solutions.md
+|   |-- 05-system-design.md
+|   |-- 06-ai-pipeline.md
+|   |-- 07-implementation.md
+|   |-- 08-api-design.md
+|   |-- 09-database-design.md
+|   |-- 10-testing.md
+|   |-- 11-benchmark.md
 |-- scripts/
 |-- tests/
 |-- requirements.txt
 `-- requirements-dev.txt
 ```
 
-## Chay du an
+## Quick start
 
-### 1) Backend
+### Backend
+
 ```powershell
 cd d:\face-detection
 python -m venv .venv
@@ -66,84 +82,73 @@ python init_db.py
 uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Luu y: WebSocket can `uvicorn[standard]` (da duoc khai bao trong `requirements.txt`). Neu ban da cai tu truoc, hay chay lai `pip install -r requirements.txt` de cap nhat.
+### Frontend
 
-### GPU (tuy chon)
-
-- Tren Windows, TensorFlow pip thuong **khong nhan CUDA GPU** (nhin thay `[]`).
-- Neu muon backend dung GPU (NVIDIA RTX), hay chay backend trong **WSL2** theo huong dan: `docs/gpu_wsl2.md`.
-
-### 2) Frontend
 ```powershell
 cd d:\face-detection\frontend
 npm install
 npm run dev
 ```
 
-### 3) Test backend core
+### Run tests
+
 ```powershell
 cd d:\face-detection
 & .\.venv\Scripts\Activate.ps1
-pytest tests/test_api_core.py tests/test_embedding_compat.py tests/test_detect_bbox.py tests/test_faiss.py -q
+pytest tests -q
 ```
 
-## URL mac dinh
-- Backend API: http://127.0.0.1:8000
-- Frontend dev: http://127.0.0.1:5173
+## Important endpoints
 
-## API endpoint hien tai
+### Authentication
+- `POST /api/login`
+- `POST /api/logout`
+- `GET /api/auth/verify`
 
-### Auth
-- POST `/api/login`
-- POST `/api/logout`
-- GET `/api/auth/verify`
+### Registration
+- `POST /api/register`
+- `POST /api/dataset/register`
+- `POST /api/dataset/register-multiple`
+- `POST /api/face/check`
+- `POST /api/face/liveness-check`
 
-### Register va face utilities
-- POST `/api/register`
-- POST `/api/dataset/register`
-- POST `/api/dataset/register-multiple`
-- POST `/api/face/check`
-- POST `/api/face/liveness-check`
+### Recognition
+- `POST /api/recognize`
+- `GET /api/ws/realtime/{session_id}?token=...`
 
-### Recognize
-- POST `/api/recognize`
-- WebSocket: `GET /api/ws/realtime/{session_id}?token=...` (track_id mode)
+### Student & attendance
+- `GET /api/students`
+- `GET /api/students/{student_id}`
+- `PUT /api/students/{student_id}`
+- `DELETE /api/students/{student_id}`
+- `GET /api/attendance`
+- `GET /api/attendance/export`
 
-### Student va attendance management
-- GET `/api/students`
-- GET `/api/students/{student_id}`
-- PUT `/api/students/{student_id}`
-- DELETE `/api/students/{student_id}`
-- GET `/api/attendance`
-- GET `/api/attendance/export`
+## Configuration
 
-## Cau hinh quan trong
-Trong `core/config.py`:
-- `ADMIN_USERNAME` (mac dinh: `admin`)
-- `ADMIN_PASSWORD` (mac dinh: `admin123`)
-- `SECRET_KEY` (mac dinh: `face-attendance-secret-key`)
-- `ACCESS_TOKEN_EXPIRE_SECONDS` (mac dinh: `3600`)
+Key settings in `core/config.py`:
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD`
+- `SECRET_KEY`
+- `ACCESS_TOKEN_EXPIRE_SECONDS`
 
-Trong `backend/main.py`:
-- `ALLOWED_ORIGINS` (mac dinh: `http://127.0.0.1:5173,http://localhost:5173`)
-- `MODEL_WARMUP_ENABLED` (`1`/`0`, mac dinh: `1`)
+Key runtime settings:
+- `ALLOWED_ORIGINS`
+- `MODEL_WARMUP_ENABLED`
 
-## Benchmark P2
-```powershell
-cd d:\face-detection
-& .\.venv\Scripts\Activate.ps1
+## Benchmark
 
-# latency: loop vs FAISS single vs FAISS batch
-python scripts/benchmark_recognize_latency.py --embeddings 1000 --queries 1000 --output benchmarks/p2_latency.json
+Scripts in `scripts/` support:
+- latency benchmark (`benchmark_recognize_latency.py`)
+- threshold evaluation (`benchmark_threshold.py`)
+- session stability and liveness metrics
 
-# threshold sweep
-python scripts/benchmark_threshold.py --dataset dataset --start 0.30 --end 0.90 --step 0.01 --output benchmarks/threshold_report.json
-```
+## Conclusion
 
-## Tai lieu tham chieu
-- `docs/architecture.md`: kien truc tong the
-- `docs/backend.md`: backend layer + endpoint + luong nghiep vu
-- `docs/frontend.md`: luong UI va API client
-- `docs/database.md`: schema SQLite + migration notes
-- `docs/roadmap_v2.md`: roadmap chi tiet (nguon chinh)
-- `docs/roadmap.md`: ban tom tat dong bo theo roadmap v2
+Project này không chỉ là một hệ thống điểm danh bằng khuôn mặt; nó là một ví dụ về cách xây dựng một pipeline AI modular và dễ refactor.
+
+- Nếu bạn muốn mở rộng: bắt đầu từ `docs/07-implementation.md` để thực hiện phase refactor.
+- Nếu bạn muốn thay model: kiểm tra `docs/06-ai-pipeline.md` và `core/config.py`.
+- Nếu bạn muốn đánh giá hiệu năng: xem `docs/11-benchmark.md` và `benchmarks/`.
+
+Tóm lại: hệ thống đã hoạt động với FastAPI + React, có FAISS search và dữ liệu SQLite, và có tài liệu đầy đủ cho bước refactor tiếp theo.

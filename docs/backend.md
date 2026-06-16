@@ -1,5 +1,61 @@
 # Backend Documentation
 
+# Request Lifecycle
+
+## Recognition Request
+
+Client
+↓
+POST /recognize
+↓
+Recognition Service
+↓
+Face Detection
+↓
+Embedding Extraction
+↓
+FAISS Search
+↓
+Attendance Validation
+↓
+Database Update
+↓
+Response
+
+---
+
+## Registration Request
+
+Client
+↓
+POST /register
+↓
+Register Service
+↓
+Face Detection
+↓
+Embedding Extraction
+↓
+FAISS Index Update
+↓
+Database Insert
+↓
+Response
+
+# Future Refactor
+
+Current:
+
+FaceService
+
+Target:
+
+RecognitionPipeline
+├── Detector
+├── Recognizer
+├── Search
+└── Decision Engine
+
 ## 1) Tong quan backend
 
 Backend dung FastAPI va chia thanh cac layer ro rang:

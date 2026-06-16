@@ -1,5 +1,88 @@
 # System Architecture
 
+# Design Principles
+
+The system follows several architectural principles:
+
+## Separation of Concerns
+
+Responsibilities are separated into:
+
+- API Layer
+- Service Layer
+- AI Engine Layer
+- Database Layer
+
+Each layer only communicates with adjacent layers.
+
+---
+
+## Single Responsibility Principle
+
+Each service should focus on one business capability.
+
+Examples:
+
+- AttendanceService
+- RegisterService
+- FaceService
+
+---
+
+## AI Pipeline Isolation
+
+AI models are isolated from business logic.
+
+Future model replacements:
+
+RetinaFace → YOLOv11-face
+
+FaceNet512 → ArcFace
+
+should not affect API contracts.
+
+---
+
+## Extensibility
+
+Detector and Recognizer components should be replaceable through interfaces.
+
+# Architecture Evolution
+
+## Current
+
+Client
+↓
+FastAPI
+↓
+FaceService
+↓
+RetinaFace
+↓
+FaceNet512
+↓
+FAISS
+↓
+SQLite
+
+---
+
+## Target
+
+Client
+↓
+FastAPI
+↓
+RecognitionPipeline
+├── Detector
+├── Recognizer
+├── Search
+└── Liveness
+↓
+Attendance Service
+↓
+SQLite
+
 ## 1) Layers
 
 1. Frontend (React/Vite)

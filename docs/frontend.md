@@ -66,7 +66,55 @@ Luu y: token dang la session-only (khong dung localStorage de auto-login lai sau
 - Ho tro sua ten va xoa sinh vien.
 - Co refresh du lieu theo nhu cau.
 
-## 7) API client
+## 7) State Management
+
+## Global State
+
+AuthContext
+
+Stores:
+
+- Access token
+- Current user
+- Authentication status
+
+---
+
+## Local State
+
+Components manage:
+
+- Forms
+- Modal state
+- Recognition results
+
+## 8) API Communication
+
+React Component
+↓
+apiClient
+↓
+FastAPI Endpoint
+↓
+JSON Response
+↓
+UI Update
+
+## 9) Realtime Flow
+
+Camera
+↓
+Frontend Capture
+↓
+WebSocket
+↓
+Backend Recognition
+↓
+Recognition Result
+↓
+UI Update
+
+## 10) API client
 
 Trong `apiClient.js`:
 
@@ -76,7 +124,7 @@ Trong `apiClient.js`:
 - Khong set `Content-Type` thu cong khi gui `FormData`.
 - WebSocket URL duoc build tu server origin (khong bao gom `/api`) vi WS endpoint nam o root: `/ws/...`.
 
-## 8) Luu y dong bo frontend-backend
+## 11) Luu y dong bo frontend-backend
 
 - Payload update student can duoc giu dong bo voi contract backend (`PUT /students/{student_id}`).
 - Neu thay doi contract API, can cap nhat `apiClient` va panel lien quan cung luc.

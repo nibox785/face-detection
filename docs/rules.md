@@ -1,22 +1,45 @@
-# 🤖 AI Rules
+# Architecture Rules
 
-## General
-- Code clean
-- Modular
-- Không hardcode
-- Không icon, ký tự đặc biệt
-## AI
-- Không train model
-- Dùng FaceNet / DeepFace
-- Dùng cosine similarity
+## Routes
 
-## Backend
-- RESTful API
-- Validate input
+Routes must:
 
-## Naming
-- snake_case (Python)
-- kebab-case (frontend)
+- Validate request
+- Call service
+- Return response
 
-## Git
-- commit theo feature
+Routes must not:
+
+- Access database directly
+- Execute AI logic
+
+# Service Rules
+
+Services must:
+
+- Contain business logic
+
+Services must not:
+
+- Return HTML
+- Handle UI logic
+
+# AI Rules
+
+Detector should be replaceable.
+
+Recognizer should be replaceable.
+
+Search engine should be replaceable.
+
+Business logic must not depend on specific models.
+
+# Documentation Rules
+
+Every feature must update:
+
+- architecture.md
+- backend.md
+- api documentation
+
+when applicable.
