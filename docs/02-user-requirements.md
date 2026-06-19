@@ -39,6 +39,35 @@
 - Hệ thống phải nhận diện khuôn mặt từ ảnh hoặc luồng realtime.
 - Hệ thống phải lưu attendance theo ngày và không trùng lặp.
 
+## Quy tắc nghiệp vụ
+
+### Đăng ký khuôn mặt
+
+- MSSV / student ID phải unique.
+- Ảnh phải qua quality validation (tối thiểu 10 ảnh, ≥4 đạt chuẩn — xem `backend.md`).
+- Mỗi ảnh phải detect được ít nhất một khuôn mặt.
+- Embedding phải tạo thành công trước khi lưu.
+- FAISS index phải được cập nhật sau đăng ký.
+
+### Nhận diện (ảnh tĩnh)
+
+- Chỉ chấp nhận khuôn mặt live (liveness pass).
+- Score phải đạt ngưỡng decision — xem `08-api-design.md`.
+- Khuôn mặt không khớp sinh viên nào không được ghi attendance.
+- Không ghi attendance trùng trong cùng ngày.
+
+### Nhận diện realtime (WebSocket)
+
+- Tránh nhận diện trùng trong cửa sổ cooldown.
+- Giảm số lần tạo embedding lặp lại trên cùng track.
+- Ưu tiên độ trễ thấp cho phản hồi realtime.
+
+### Điểm danh (attendance)
+
+- Một bản ghi attendance / sinh viên / ngày.
+- Timestamp theo timezone server (UTC+7 — xem `09-database-design.md`).
+- Bản ghi attendance không chỉnh sửa sau khi tạo (immutable).
+
 ## Non-functional requirements
 
 - Thời gian phản hồi `/recognize` < 1.5s cho pipeline hiện tại.

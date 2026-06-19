@@ -3,47 +3,46 @@
 ## Core features
 
 - Đăng nhập quản trị viên bằng JWT.
-- Đăng ký sinh viên và lưu trữ thông tin cơ bản.
-- Đăng ký khuôn mặt bằng ảnh đơn hoặc nhiều ảnh.
-- Nhận diện khuôn mặt và ghi attendance tự động.
+- Đăng ký sinh viên và lưu trữ thông tin cơ bản (MSSV).
+- Đăng ký khuôn mặt bằng ảnh đơn hoặc nhiều ảnh (burst capture + quality scoring).
+- Nhận diện khuôn mặt và ghi attendance tự động (ảnh tĩnh + WebSocket realtime).
+- Liveness check và decision logic (`AUTO_MARK`, `MANUAL_REVIEW`, `REJECT`).
 - Search embedding với FAISS.
 - Lưu attendance theo ngày và tránh ghi trùng.
-- REST API cho frontend React.
-- CORS cấu hình để tương thích với Vite.
+- Export attendance Excel; import/export danh sách lớp từ frontend.
+- REST API cho frontend React; CORS tương thích Vite.
 
 ## Current feature set
 
-- `POST /api/register` để đăng ký khuôn mặt.
-- `POST /api/recognize` để nhận diện và điểm danh.
-- `GET /api/students` và `GET /api/attendance` để lấy dữ liệu.
-- `DELETE /api/students/{id}` để xóa sinh viên.
-- `GET /debug/faiss-info` để kiểm tra index FAISS.
-- Websocket realtime flow cho điểm danh camera.
+Contract đầy đủ: `08-api-design.md`. Tóm tắt:
 
-## Refactor features
+- Auth: `POST /api/login`, `POST /api/logout`, `GET /api/auth/verify`
+- Register: `POST /api/register`, `POST /api/dataset/register`, `POST /api/dataset/register-multiple`, `POST /api/face/check`, `POST /api/face/liveness-check`
+- Recognize: `POST /api/recognize`, WebSocket `/api/ws/recognize`, `/api/ws/realtime/{session_id}`
+- Students & attendance: CRUD sinh viên, `GET /api/attendance`, `GET /api/attendance/export`
+- Debug: `GET /health`, `GET /debug/faiss-info`
 
-- Tách pipeline AI thành modules có interface.
-- Thêm `face_engine/` và `pipeline/` riêng.
-- Hỗ trợ config `DETECTOR` và `RECOGNIZER`.
-- Thêm base classes:
-  - `BaseDetector`
-  - `BaseRecognizer`
-  - `BaseSearchEngine`
-- Lưu chỉ mục FAISS theo định dạng dễ cập nhật.
+## Refactor features (đang/plan)
+
+- [x] Tách domain routers (`auth_routes`, `register_routes`, …) — Phase A
+- [ ] `RecognitionPipeline` và tách `FaceService`
+- [ ] Config `DETECTOR` / `RECOGNIZER` qua factory
+- [ ] Base classes: `BaseDetector`, `BaseRecognizer`, `BaseSearchEngine`
+- [ ] `FaissService` — bỏ FAISS global trong `main.py`
+- [ ] Repository layer — route không gọi `db.py` trực tiếp
 
 ## Future feature candidates
 
 - Thay RetinaFace bằng YOLOv11-face.
 - Thay FaceNet512 bằng ArcFace.
-- Thêm tracking với ByteTrack cho realtime.
-- Thêm export attendance CSV/Excel.
-- Thêm quality scoring cho ảnh đăng ký.
-- Thêm dashboard đơn giản cho performance metrics.
+- ByteTrack cho realtime (giảm embedding calls).
+- Dashboard performance metrics trên UI.
+- Pagination cho danh sách lớn.
 
 ## Feature priorities
 
 1. Giữ chức năng hiện tại ổn định.
-2. Tách module AI và business.
+2. Tách module AI và business (Phase 1–2).
 3. Đảm bảo API contract không đổi.
-4. Thêm benchmarks và test coverage.
+4. Benchmark và test coverage.
 5. Đổi detector/recognizer mà không thay frontend.

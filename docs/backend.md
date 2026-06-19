@@ -1,189 +1,93 @@
-# Backend Documentation
+# Backend Runtime
 
-# Request Lifecycle
+Tài liệu mô tả cách backend **đang chạy** thực tế. Kiến trúc mục tiêu: `05-system-design.md`. API contract: `08-api-design.md`. Database: `09-database-design.md`. AI pipeline: `06-ai-pipeline.md`.
 
-## Recognition Request
+## Module map
 
-Client
-↓
-POST /recognize
-↓
-Recognition Service
-↓
-Face Detection
-↓
-Embedding Extraction
-↓
-FAISS Search
-↓
-Attendance Validation
-↓
-Database Update
-↓
-Response
+```
+backend/
+  main.py              # FastAPI app, CORS, lifespan, /health, /debug/faiss-info
+  api/
+    routes.py          # aggregator (re-export)
+    auth_routes.py
+    register_routes.py
+    recognize_routes.py
+    attendance_routes.py
+    websocket_routes.py
+    common.py          # cache, FAISS helpers, thresholds, image/WS utils
+  services/
+    face_service.py
+    register_service.py
+    attendance_service.py
+    faiss_search.py
+  database/
+    db.py
+    schemas.py
+```
 
----
+Router HTTP/WebSocket được mount tại prefix `/api` trong `main.py`. WebSocket URL đầy đủ: `/api/ws/...`.
 
-## Registration Request
+**Triển khai:** cần `uvicorn[standard]` (hoặc `websockets` / `wsproto`) để dùng WebSocket.
 
-Client
-↓
-POST /register
-↓
-Register Service
-↓
-Face Detection
-↓
-Embedding Extraction
-↓
-FAISS Index Update
-↓
-Database Insert
-↓
-Response
+## Startup (`backend/main.py`)
 
-# Future Refactor
+1. `init_db()`
+2. `update_embeddings_cache()`
+3. `init_faiss_index()`
+4. `warmup_ai_models()` — tắt bằng `MODEL_WARMUP_ENABLED=0`
 
-Current:
+Debug: `GET /health`, `GET /debug/faiss-info`
 
-FaceService
+## Runtime flows
 
-Target:
+Quy tắc nghiệp vụ: `02-user-requirements.md`.
 
-RecognitionPipeline
-├── Detector
-├── Recognizer
-├── Search
-└── Decision Engine
+| Luồng | Đường đi |
+|-------|----------|
+| Đăng ký | `POST /api/dataset/register-multiple` → `RegisterService` → quality + detect + embed → DB + FAISS |
+| Nhận diện ảnh | `POST /api/recognize` → `FaceService` → liveness + FAISS → decision → `AttendanceService` |
+| Realtime | WebSocket Mode A/B → tracking + cooldown → `FaceService` → response |
+| Điểm danh | Recognition result → `AttendanceService` → kiểm tra trùng ngày → ghi DB |
 
-## 1) Tong quan backend
+## Auth runtime
 
-Backend dung FastAPI va chia thanh cac layer ro rang:
+- JWT `HS256`, `SECRET_KEY` từ `core/config.py`.
+- Payload có `exp` và `jti`; logout ghi `jti` vào bảng `revoked_tokens`.
+- Endpoint bảo vệ yêu cầu `Authorization: Bearer <token>` (ví dụ `POST /api/recognize`).
 
-- `api/routes.py`: khai bao endpoint va auth gate.
-- `services/`: business logic (register, attendance, face service, FAISS).
-- `database/db.py`: SQLite CRUD + migration nhe + index.
-- `database/schemas.py`: response model Pydantic.
-- `main.py`: khoi tao app, CORS, lifespan, warm-up model.
+## WebSocket modes
 
-Ghi chu: de dung WebSocket endpoint (`/api/ws/...`), can cai `uvicorn[standard]` (hoac tuong duong `websockets`/`wsproto`).
+| Endpoint | Mục đích |
+|----------|----------|
+| `GET /api/ws/recognize?token=...` | Mode A — client gửi frame + `track_hints[]`; server detect và gắn `track_id` theo hint |
+| `GET /api/ws/realtime/{session_id}?token=...` | Mode B — server-side tracking; trả `bbox + result` liên tục cho overlay |
 
-Muc tieu: de bao tri, de benchmark, de thay the/tinh chinh model trong tuong lai.
+Message contract chi tiết: `08-api-design.md` §WebSocket.
 
-## 2) Lifespan va startup
+Frontend build URL qua `apiClient.js` (`getWsOrigin()` → `ws://host:8000/api`).
 
-Khi app khoi dong (`backend/main.py`):
+## Face pipeline (runtime)
 
-1. `init_db()` tao/migrate schema SQLite.
-2. `update_embeddings_cache()` nap embedding cache tu DB.
-3. `init_faiss_index()` build FAISS index tu cache.
-4. `warmup_ai_models()` (co the tat bang `MODEL_WARMUP_ENABLED=0`) de giam cold-start.
+Luồng trong `recognize_routes.py` + `services/face_service.py`:
 
-Endpoint debug:
-- `GET /debug/faiss-info`
-- `GET /health`
+1. Detect — `face_engine/facenet/detect.py` (RetinaFace qua DeepFace).
+2. Embed — `face_engine/facenet/embedding.py` (FaceNet512).
+3. Liveness — `get_embedding_with_liveness`.
+4. Search — FAISS ưu tiên, fallback cosine loop.
+5. Decision + top-3 candidates — ngưỡng trong `backend/api/common.py` (xem `08-api-design.md` §Decision thresholds).
 
-## 3) Auth va bao mat
+## Đăng ký nhiều ảnh
 
-- JWT dung `HS256` voi `SECRET_KEY` (`core/config.py`).
-- Token co `exp` va `jti`.
-- Logout revoke `jti` vao bang `revoked_tokens` (khong con blacklist RAM).
-- Kiem tra token:
-  - `POST /api/login`
-  - `POST /api/logout`
-  - `GET /api/auth/verify`
-- `/api/recognize` bat buoc co `Authorization: Bearer <token>`.
+`POST /api/dataset/register-multiple` (`register_routes.py`):
 
-## 4) API hien tai (`/api`)
+- Yêu cầu tối thiểu **10** ảnh (`TARGET_REGISTRATION_FRAMES=10`).
+- Mỗi frame được chấm quality (độ nét, sáng, tỷ lệ mặt, vị trí, confidence).
+- Cần ít nhất **4** frame đạt (`MIN_ACCEPTED_REGISTRATION_FRAMES=4`).
+- Lưu embedding, ảnh vào `dataset/`, cập nhật embedding cache và FAISS.
 
-### Auth
-- `POST /login`
-- `POST /logout`
-- `GET /auth/verify`
+## Hạn chế hiện tại
 
-### Register / Face utility
-- `POST /register` (single image)
-- `POST /dataset/register` (single image + luu dataset)
-- `POST /dataset/register-multiple` (10 images + quality scoring)
-- `POST /face/check`
-- `POST /face/liveness-check`
-
-### Recognize
-- `POST /recognize`
-
-### WebSocket realtime
-
-- `GET /api/ws/recognize?token=...`
-  - Mode cu: FE gui full frame (base64) + `track_hints[]`, backend detect face va co gang gan `track_id` theo hint.
-- `GET /api/ws/realtime/{session_id}?token=...`
-  - Mode B (server-side tracking): FE gui full frame, backend detect + gan `track_id` + tra `bbox + result` de FE ve overlay lien tuc.
-
-#### Contract `/api/ws/realtime/{session_id}`
-
-- Client -> server:
-  - `{"type":"ping"}`
-  - `{"type":"frame","frame_id":"...","image":"data:image/jpeg;base64,..."}`
-- Server -> client:
-  - `{"type":"pong","ts": 171...}`
-  - `{"type":"frame_result","session_id":"...","frame_id":"...","tracks":[{"track_id":"...","bbox":{...},"result":{...}}]}`
-  - `{"type":"error","message":"...","frame_id":"..." }`
-
-### Student / Attendance management
-- `GET /students`
-- `GET /students/{student_id}`
-- `PUT /students/{student_id}` (nhan `name` qua form-data)
-- `DELETE /students/{student_id}`
-- `GET /attendance`
-- `GET /attendance/export`
-
-## 5) Face pipeline
-
-Pipeline trong `routes.py` + `services/face_service.py`:
-
-1. Detect face (`face_engine/facenet/detect.py`): DeepFace.extract_faces voi `detector_backend="retinaface"`.
-2. Embedding (`face_engine/facenet/embedding.py`): DeepFace.represent model `Facenet512`.
-3. Liveness gate (`get_embedding_with_liveness`).
-4. Similarity search:
-   - uu tien FAISS index (neu available),
-   - fallback loop cosine similarity.
-5. Tra ve top-3 candidates + decision:
-   - `AUTO_MARK` neu score >= 0.72,
-   - `MANUAL_REVIEW` neu score >= 0.55,
-   - nguoc lai `REJECT`.
-
-## 6) Dang ky nhieu anh
-
-`POST /dataset/register-multiple` su dung quy trinh:
-
-- Nhan toi thieu 10 anh (`TARGET_REGISTRATION_FRAMES=10`).
-- Moi frame duoc tinh quality score (do net, do sang, ti le khuon mat, vi tri tam, confidence).
-- Chon frame dat chat luong, fallback neu can.
-- Yeu cau it nhat 4 frame dat (`MIN_ACCEPTED_REGISTRATION_FRAMES=4`).
-- Luu embedding + luu anh vao `dataset/` + cap nhat cache FAISS.
-
-## 7) Database interaction
-
-Tat ca thao tac DB di qua `backend/database/db.py`:
-
-- Student CRUD + MSSV unique check.
-- Embedding serialize dang binary (`EMB1 + float32 bytes`).
-- Backward compatibility voi blob cu (pickle).
-- Attendance insert/check theo ngay (UTC+7).
-- Revoke token va cleanup token het han.
-
-## 8) FAISS va benchmark
-
-- FAISS index class: `backend/services/faiss_search.py`.
-- Benchmark files:
-  - `tests/benchmark_faiss.py`
-  - `scripts/benchmark_recognize_latency.py`
-  - `scripts/benchmark_threshold.py`
-
-Ket qua benchmark duoc ghi vao thu muc `benchmarks/`.
-
-## 9) Ghi chu han che hien tai
-
-- `PUT /students/{student_id}` dang nhan form-data, can giu dong bo payload giua frontend va backend.
-- Rate limiting chi bat khi cai `slowapi`.
-- Chua co pagination cho danh sach lon.
-
+- `PUT /api/students/{student_id}` chỉ nhận `name` qua `multipart/form-data` — chưa hỗ trợ cập nhật `mssv` qua endpoint này.
+- Rate limiting chỉ bật khi cài `slowapi`.
+- Chưa có pagination cho danh sách lớn.
+- `FaceService` vẫn gom nhiều trách nhiệm AI — mục tiêu tách sang `RecognitionPipeline` (xem `05-system-design.md`).

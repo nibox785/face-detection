@@ -1,3 +1,5 @@
+> **Deprecated (2026-06):** Tài liệu legacy trước khi tách domain routers. Tham khảo `07-implementation.md`, `05-system-design.md`, `dependency-analysis.md` thay thế.
+
 # Blueprint Migrate Nghiep Vu Tu Attendance-by-Face
 
 Ngay cap nhat: 2026-04-27

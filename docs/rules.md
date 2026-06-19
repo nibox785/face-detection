@@ -36,10 +36,8 @@ Business logic must not depend on specific models.
 
 # Documentation Rules
 
-Every feature must update:
+Every feature must update when applicable:
 
-- architecture.md
-- backend.md
-- api documentation
-
-when applicable.
+- `05-system-design.md`
+- `backend.md`
+- `08-api-design.md`

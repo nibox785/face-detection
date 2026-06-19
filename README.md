@@ -35,7 +35,7 @@ Hệ thống minh họa một pipeline nhận diện khuôn mặt đầy đủ, 
 face-detection/
 |-- backend/
 |   |-- main.py
-|   |-- api/routes.py
+|   |-- api/{routes.py, attendance_routes.py, auth_routes.py, common.py, recognize_routes.py, register_routes.py, websocket_routes.py}
 |   |-- database/{db.py,models.py,schemas.py}
 |   `-- services/{attendance_service.py,face_service.py,faiss_search.py,register_service.py}
 |-- core/config.py
@@ -46,22 +46,13 @@ face-detection/
 |   |-- context/AuthContext.jsx
 |   `-- components/features/{LoginPanel.jsx,RegisterPanel.jsx,AttendancePanel.jsx,StudentsPanel.jsx}
 |-- docs/
-|   |-- architecture.md
+|   |-- index.md
 |   |-- backend.md
-|   |-- database.md
 |   |-- frontend.md
+|   |-- dependency-analysis.md
+|   |-- rules.md
 |   |-- roadmap.md
-|   |-- 01-project-overview.md
-|   |-- 02-user-requirements.md
-|   |-- 03-features.md
-|   |-- 04-tech-solutions.md
-|   |-- 05-system-design.md
-|   |-- 06-ai-pipeline.md
-|   |-- 07-implementation.md
-|   |-- 08-api-design.md
-|   |-- 09-database-design.md
-|   |-- 10-testing.md
-|   |-- 11-benchmark.md
+|   |-- 01-project-overview.md … 11-benchmark.md
 |-- scripts/
 |-- tests/
 |-- requirements.txt
@@ -98,31 +89,11 @@ cd d:\face-detection
 pytest tests -q
 ```
 
-## Important endpoints
+## Documentation
 
-### Authentication
-- `POST /api/login`
-- `POST /api/logout`
-- `GET /api/auth/verify`
-
-### Registration
-- `POST /api/register`
-- `POST /api/dataset/register`
-- `POST /api/dataset/register-multiple`
-- `POST /api/face/check`
-- `POST /api/face/liveness-check`
-
-### Recognition
-- `POST /api/recognize`
-- `GET /api/ws/realtime/{session_id}?token=...`
-
-### Student & attendance
-- `GET /api/students`
-- `GET /api/students/{student_id}`
-- `PUT /api/students/{student_id}`
-- `DELETE /api/students/{student_id}`
-- `GET /api/attendance`
-- `GET /api/attendance/export`
+- **Quick index:** [`docs/index.md`](docs/index.md)
+- **API contract:** [`docs/08-api-design.md`](docs/08-api-design.md)
+- **Refactor plan:** [`docs/07-implementation.md`](docs/07-implementation.md)
 
 ## Configuration
 

@@ -1,56 +1,47 @@
 # AI Pipeline
 
+Chi tiết abstraction và migration model. Phase refactor: `07-implementation.md` (source of truth).
+
 ## Hiện tại
 
-Pipeline hiện tại thực hiện các bước sau:
+Pipeline runtime trong `recognize_routes.py` + `face_service.py`:
 
-1. Nhận ảnh input từ frontend hoặc frame.
-2. Detect face bằng RetinaFace (`face_engine/facenet/detect.py`).
-3. Trích xuất embedding bằng FaceNet512 (`face_engine/facenet/embedding.py`).
-4. Tùy chọn chạy liveness check.
-5. Search trong database embeddings.
-6. Trả về top-k kết quả và quyết định attendance.
+1. Nhận ảnh/frame từ client.
+2. Detect — RetinaFace (`face_engine/facenet/detect.py`).
+3. Embed — FaceNet512 (`face_engine/facenet/embedding.py`).
+4. Liveness — `get_embedding_with_liveness`.
+5. Search — FAISS ưu tiên, fallback cosine loop.
+6. Decision + top-3 candidates — ngưỡng trong `backend/api/common.py` (xem `08-api-design.md`).
 
 ## Components
 
 ### Detector
 
-- Hiện tại: RetinaFace.
-- Input: frame ảnh BGR.
-- Output: list bounding boxes và face crops.
-- Future: chuyển sang YOLOv11-face.
+- Hiện tại: RetinaFace (BGR frame → bboxes + crops).
+- Mục tiêu: YOLOv11-face qua `BaseDetector`.
 
 ### Recognizer
 
-- Hiện tại: FaceNet512.
-- Input: face crop.
-- Output: embedding vector 512-d.
-- Future: ArcFace.
+- Hiện tại: FaceNet512 (face crop → 512-d embedding).
+- Mục tiêu: ArcFace qua `BaseRecognizer`.
 
 ### Liveness
 
-- Hiện tại gộp trong `get_embedding_with_liveness`. 
-- Future nên tách thành module riêng.
+- Hiện tại gộp trong `get_embedding_with_liveness`.
+- Mục tiêu: module `liveness/` riêng trong `face_engine/`.
 
 ### Search
 
-- Hiện tại sử dụng FAISS hoặc loop cosine.
-- Data: list của `(student_id, embedding)`.
-- Future: sử dụng `IndexFlatIP` khi embedding đã normalize.
+- Hiện tại: FAISS `IndexFlatL2` hoặc cosine loop.
+- Mục tiêu: `IndexFlatIP` khi dùng embedding đã normalize (ArcFace).
 
 ## Target pipeline
 
-Frame
-↓
-Detector
-↓
-Recognizer
-↓
-Search Engine
-↓
-Decision Engine
-↓
-Attendance
+```
+Frame → Detector → Recognizer → Liveness → Search → Decision → Attendance
+```
+
+Entry point mục tiêu: `RecognitionPipeline` (`face_engine/pipeline/recognition_pipeline.py`).
 
 ## Proposed abstraction
 
@@ -83,55 +74,29 @@ class BaseSearchEngine:
 
 ## Example implementations
 
-### RetinaFaceDetector
+- **RetinaFaceDetector** — DeepFace RetinaFace; output `{x, y, w, h, confidence}`.
+- **FaceNetRecognizer** — DeepFace FaceNet512; float32 embedding.
+- **FAISSEmbeddingIndex** — `dim=512`, incremental add, top-k search.
 
-- Dùng DeepFace RetinaFace để detect.
-- Xuất ra bounding boxes `{x, y, w, h, confidence}`.
+## Ánh xạ phase (theo `07-implementation.md`)
 
-### FaceNetRecognizer
-
-- Dùng DeepFace FaceNet512.
-- Trả về embedding chuẩn float32.
-
-### FAISSEmbeddingIndex
-
-- Build index với `dim=512`.
-- Add embeddings incremental.
-- Search top-k candidate.
-
-## Refactor plan
-
-### Phase 1
-
-- Di chuyển AI logic xuống `face_engine/`.
-- Giữ service layer gọi function hiện tại.
-
-### Phase 2
-
-- Thêm interface `BaseDetector`.
-- Migrate `detect_faces` thành `RetinaFaceDetector.detect`.
-- Config `DETECTOR=retinaface`.
-
-### Phase 3
-
-- Implement `YoloFaceDetector`.
-- So sánh hiệu năng.
-
-### Phase 4
-
-- Thêm interface `BaseRecognizer`.
-- Migrate FaceNet512 sang `FaceNetRecognizer`.
-- Implement `ArcFaceRecognizer`.
-
-### Phase 5
-
-- Thêm track layer.
-- Giảm embedding call trong realtime.
+| Phase | Nội dung AI |
+|-------|-------------|
+| A ✅ | Tách API routers (không đổi pipeline) |
+| 1 | `RecognitionPipeline`; di chuyển logic từ `facenet/*` |
+| 2 | Config `DETECTOR`, `RECOGNIZER`, factory/registry |
+| 3 | `BaseDetector` + `RetinaFaceDetector` |
+| 4 | `YoloFaceDetector`; benchmark vs RetinaFace |
+| 5 | `BaseRecognizer` + `FaceNetRecognizer` / `ArcFaceRecognizer` |
+| 6 | ByteTrack — giảm embedding calls realtime |
+| 7 | Benchmark FPS, latency, accuracy |
 
 ## Evaluation metrics
 
-- Detection FPS.
-- Recognition latency.
-- Accuracy / top-k score.
-- FAISS search time.
-- Liveness false positive/negative rate.
+- Detection FPS
+- Recognition latency
+- Accuracy / top-k score
+- FAISS search time
+- Liveness false positive/negative rate
+
+Chi tiết scripts và baseline: `11-benchmark.md`.

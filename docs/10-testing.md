@@ -1,5 +1,7 @@
 # Testing
 
+Chiến lược test theo phase refactor: `07-implementation.md`.
+
 ## Goals
 
 - Bảo đảm refactor không phá vỡ chức năng hiện tại.
@@ -10,27 +12,23 @@
 
 ### Unit tests
 
-- Detector implementations.
-- Recognizer implementations.
-- FAISS wrapper.
-- FaceService logic.
-- RegisterService logic.
-- AttendanceService logic.
-- DB helper functions.
+- Detector / recognizer implementations (sau Phase 3–5).
+- FAISS wrapper (`faiss_search.py`).
+- `FaceService`, `RegisterService`, `AttendanceService`.
+- DB helper functions (`backend/database/db.py`).
 
 ### Integration tests
 
-- `POST /api/register`
+- `POST /api/register`, `POST /api/dataset/register-multiple`
 - `POST /api/recognize`
-- `GET /api/students`
-- `PUT /api/students/{id}`
-- `DELETE /api/students/{id}`
-- Auth flow `/api/login`, `/api/logout`, `/api/auth/verify`
+- `GET /api/students`, `PUT /api/students/{id}`, `DELETE /api/students/{id}`
+- Auth: `/api/login`, `/api/logout`, `/api/auth/verify`
+- WebSocket recognize/realtime (khi có harness)
 
 ### Regression tests
 
 - `init_db()` migration flow.
-- Embedding serialize/deserialze.
+- Embedding serialize/deserialize.
 - Attendance duplicate check.
 - FAISS index rebuild and search fallback.
 
@@ -47,19 +45,14 @@
 
 - `backend/database/db.py`
 - `backend/services/*.py`
-- `backend/api/routes.py`
+- `backend/api/*_routes.py`, `common.py`
 - `face_engine/facenet/*`
 - `backend/main.py` startup flows
 
 ## Test framework
 
-- Pytest.
-- Fixtures trong `tests/conftest.py`.
-
-## Test environment
-
-- Sử dụng SQLite test database hoặc in-memory DB.
-- Bật `PYTEST_CURRENT_TEST` để skip warmup nếu cần.
+- Pytest; fixtures trong `tests/conftest.py`.
+- SQLite test DB hoặc in-memory; `PYTEST_CURRENT_TEST` để skip warmup khi cần.
 
 ## How to run
 
@@ -67,34 +60,25 @@
 pytest tests
 ```
 
-## Add tests for refactor
+## Tests theo phase refactor
 
-### After Phase 1
-
-- Test AI helper module import và function output.
-- Test `FaceService.detect()`/`extract_embedding()`.
-
-### After Phase 2
-
-- Test `BaseDetector` và `RetinaFaceDetector`.
-- Test detector factory config switch.
-
-### After Phase 4
-
-- Test `BaseRecognizer` và `FaceNetRecognizer`.
-- Test `ArcFaceRecognizer` if implemented.
-
-### After Phase 5
-
-- Test tracker + recognition integration.
+| Phase | Thêm test |
+|-------|-----------|
+| 1 | `RecognitionPipeline` import/output; `FaceService` gọi pipeline |
+| 2 | Factory switch `DETECTOR` / `RECOGNIZER` |
+| 3 | `BaseDetector`, `RetinaFaceDetector` |
+| 4 | `YoloFaceDetector` benchmark regression |
+| 5 | `BaseRecognizer`, `FaceNetRecognizer`, `ArcFaceRecognizer` |
+| 6 | Tracker + recognition integration |
+| 7 | Benchmark report + API contract regression |
 
 ## Test naming conventions
 
 - `test_<module>_<behavior>.py`
-- Use descriptive names, e.g. `test_face_service_recognize_faiss_fallback`
+- Ví dụ: `test_face_service_recognize_faiss_fallback`
 
 ## Continuous validation
 
-- `backend/main.py` app startup should pass health check.
-- `tests/test_api_core.py` should cover core API contract.
-- Keep tests fast and deterministic.
+- `backend/main.py` startup + `GET /health`
+- `tests/test_api_core.py` cover core API contract
+- Tests nhanh và deterministic

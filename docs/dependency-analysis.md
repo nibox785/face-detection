@@ -1,86 +1,82 @@
 ﻿# Dependency Analysis
 
+Phân tích phụ thuộc codebase **hiện tại** (sau khi tách domain routers). Kiến trúc mục tiêu: `05-system-design.md`.
+
 ## Mục tiêu
 
-Tài liệu này phân tích các phụ thuộc chính trong hệ thống hiện tại để giúp hiểu rõ coupling, điểm nóng cần refactor, và các luồng dữ liệu quan trọng.
+Làm rõ coupling, dependency hotspots, và hướng refactor tiếp theo sau Phase A (route separation).
 
 ## Dependency overview
 
 ### 1. Backend entrypoint
 
 - `backend/main.py`
-  - Khởi tạo FastAPI app.
-  - Gọi `init_db()` từ `backend/database/db.py`.
-  - Nhúng router từ `backend/api/routes.py`.
-  - Tạo FAISS index bằng `backend/services/faiss_search.py`.
-  - Warmup AI models bằng `face_engine/facenet`.
+  - FastAPI app, CORS, lifespan.
+  - `init_db()` → `backend/database/db.py`.
+  - `update_embeddings_cache()` → `backend/api/common.py`.
+  - `init_faiss_index()` — global `faiss_index` (`FAISSEmbeddingIndex`).
+  - `warmup_ai_models()` → `face_engine/facenet`.
+  - Mount `router` từ `backend/api/routes.py` tại prefix `/api`.
+  - Endpoints root: `/`, `/health`, `/debug/faiss-info`.
 
 ### 2. API layer
 
-- `backend/api/routes.py`
-  - Chịu trách nhiệm định nghĩa endpoint.
-  - Khởi tạo các service:
-    - `FaceService`
-    - `AttendanceService`
-    - `RegisterService`
-  - Import trực tiếp nhiều hàm từ `backend/database/db.py`.
-  - Import cấu hình từ `core/config.py`.
-  - Định nghĩa cache `embeddings_cache`, update cache và tái tạo FAISS index.
-  - Sử dụng dynamic import `from backend.main import faiss_index` khi cần.
+- `backend/api/routes.py` — aggregator, re-export `router` và `common` helpers.
+- `backend/api/__init__.py` — ghép domain routers:
+  - `auth_routes.py`
+  - `register_routes.py`
+  - `recognize_routes.py`
+  - `attendance_routes.py`
+  - `websocket_routes.py`
+- `backend/api/common.py`
+  - `embeddings_cache`, `update_embeddings_cache()`.
+  - Thresholds đăng ký / decision.
+  - Image/WS helpers, rate limiter.
+  - Import `get_all_embeddings` từ `db.py`.
+  - Dynamic import `backend.main` (`init_faiss_index`, `faiss_index`) khi rebuild/incremental FAISS.
+
+| File route | Phụ thuộc chính |
+|------------|-----------------|
+| `auth_routes.py` | `db.py` (revoke token), `core/config.py`, JWT |
+| `register_routes.py` | `register_service`, `face_service`, `db.py` (student/embedding CRUD), `common.py` |
+| `recognize_routes.py` | `face_service`, `attendance_service`, `db.py`, `common.py`, `backend.main.faiss_index` |
+| `attendance_routes.py` | `db.py` (students, attendance), `schemas.py` |
+| `websocket_routes.py` | `recognize_routes` helpers, `face_service`, `db.py`, `common.py` |
 
 ### 3. Service layer
 
-- `backend/services/face_service.py`
-  - Detect, embed, liveness, similarity, top-k.
-  - Lazy import `face_engine/facenet/detect.py` và `face_engine/facenet/embedding.py`.
-  - Phụ thuộc trực tiếp vào `face_engine` và `numpy`.
-
-- `backend/services/register_service.py`
-  - Phụ thuộc vào `backend.services.face_service.FaceService`.
-  - Phụ thuộc vào `backend.database.db` để tạo student, truy vấn tồn tại, lưu embedding.
-  - Kết hợp xử lý ảnh OpenCV với business logic đăng ký.
-
-- `backend/services/attendance_service.py`
-  - Phụ thuộc vào `backend.database.db` để kiểm tra và ghi attendance.
-
-- `backend/services/faiss_search.py`
-  - Quản lý FAISS index.
-  - Không phụ thuộc trực tiếp vào database; nhận dữ liệu từ API/service.
+- `backend/services/face_service.py` — detect, embed, liveness, similarity, top-k → `face_engine/facenet/*`.
+- `backend/services/register_service.py` — → `face_service`, `db.py`, OpenCV.
+- `backend/services/attendance_service.py` — → `db.py`.
+- `backend/services/faiss_search.py` — FAISS index class; nhận data từ cache, không đọc DB trực tiếp.
 
 ### 4. Database layer
 
-- `backend/database/db.py`
-  - Khởi tạo schema SQLite.
-  - Cung cấp CRUD cho students, embeddings, attendance, revoked_tokens.
-  - Xuất các hàm dùng bởi services và routes.
-
-- `backend/database/schemas.py`
-  - Định nghĩa Pydantic models cho API response/request.
+- `backend/database/db.py` — schema, CRUD, migration nhẹ.
+- `backend/database/schemas.py` — Pydantic request/response.
 
 ### 5. AI engine layer
 
-- `face_engine/facenet/detect.py`
-  - Dùng DeepFace RetinaFace để detect mặt.
-
-- `face_engine/facenet/embedding.py`
-  - Dùng DeepFace FaceNet512 để represent embedding.
-  - Chứa hàm liveness nếu có.
+- `face_engine/facenet/detect.py` — DeepFace RetinaFace.
+- `face_engine/facenet/embedding.py` — FaceNet512, liveness.
 
 ## Dependency graph
 
 ```text
-frontend <-- HTTP/WebSocket --> backend/api/routes.py
-backend/api/routes.py --> backend/services/{face_service,register_service,attendance_service}
-backend/api/routes.py --> backend/database/db.py
-backend/api/routes.py --> core/config.py
-backend/services/register_service.py --> backend/services/face_service.py
-backend/services/register_service.py --> backend/database/db.py
-backend/services/attendance_service.py --> backend/database/db.py
+frontend <-- HTTP/WebSocket --> backend/api/__init__.py (router)
+  |-- auth_routes.py ----------> backend/database/db.py
+  |-- register_routes.py -----> register_service, face_service, db.py, common.py
+  |-- recognize_routes.py ----> face_service, attendance_service, db.py, common.py
+  |                              \-> backend.main.faiss_index (dynamic)
+  |-- attendance_routes.py ---> db.py
+  |-- websocket_routes.py ----> recognize helpers, face_service, db.py, common.py
+  \-- common.py --------------> db.py, backend.main (dynamic)
+
+backend/services/register_service.py --> face_service.py, db.py
+backend/services/attendance_service.py --> db.py
 backend/services/face_service.py --> face_engine/facenet/{detect,embedding}
-backend/main.py --> backend/database/db.py
-backend/main.py --> backend/api/routes.py
-backend/main.py --> backend/services/faiss_search.py
-backend/main.py --> face_engine/facenet/{detect,embedding}
+
+backend/main.py --> db.py, routes.py, faiss_search.py, common.py, face_engine (warmup)
 ```
 
 ## Dependency diagram (ASCII)
@@ -88,121 +84,108 @@ backend/main.py --> face_engine/facenet/{detect,embedding}
 ```text
 frontend
   |
-  | HTTP/WebSocket
+  | HTTP / WebSocket (/api/...)
   v
-backend/api/routes.py
-  |---> backend/services/register_service.py
-  |       |---> backend/services/face_service.py
-  |       |       |---> face_engine/facenet/detect.py
-  |       |       `---> face_engine/facenet/embedding.py
-  |       `---> backend/database/db.py
+backend/api/__init__.py
   |
-  |---> backend/services/attendance_service.py
-  |       `---> backend/database/db.py
+  +-- auth_routes.py --> db.py, core/config.py
   |
-  |---> backend/services/faiss_search.py
-  |       `---> [FAISS in-memory index]
+  +-- register_routes.py --> register_service --> face_service --> face_engine
+  |                        \-> db.py, common.py
   |
-  `---> backend/database/db.py
+  +-- recognize_routes.py --> face_service, attendance_service --> db.py
+  |                           \-> common.py --> main.faiss_index (dynamic)
   |
-  `---> core/config.py
+  +-- attendance_routes.py --> db.py
   |
-  `---> backend/main.py (startup/orchestration)
+  +-- websocket_routes.py --> recognize helpers, face_service, db.py
+  |
+  +-- common.py --> db.py, main.{faiss_index, init_faiss_index}
 
 backend/main.py
-  |---> backend/database/db.py
-  |---> backend/api/routes.py
-  |---> backend/services/faiss_search.py
-  `---> face_engine/facenet/{detect,embedding}
+  |-- init_db() --> db.py
+  |-- update_embeddings_cache() --> common.py
+  |-- init_faiss_index() --> faiss_search.py + embeddings_cache
+  \-- include_router(routes) --> api/__init__.py
 ```
+
+## Tiến độ refactor (Phase A)
+
+**Đã xong**
+
+- Tách `routes.py` monolith thành domain routers + `common.py`.
+- `routes.py` chỉ còn aggregator.
+
+**Chưa xong**
+
+- Route vẫn gọi `db.py` trực tiếp (`attendance_routes`, `register_routes`, `auth_routes`).
+- FAISS global vẫn sống trong `main.py`; `common.py` / `recognize_routes.py` import ngược.
+- `FaceService` vẫn gom nhiều trách nhiệm AI.
+- Chưa có `RecognitionPipeline`, repository layer.
 
 ## Key coupling issues
 
-### A. Route layer phụ thuộc nhiều vào DB
+### A. Route layer vẫn phụ thuộc DB
 
-`backend/api/routes.py` import trực tiếp hơn 10 hàm từ `backend/database/db.py`.
+`attendance_routes.py`, `register_routes.py`, `auth_routes.py` import trực tiếp nhiều hàm từ `db.py`.
 
-- Ảnh hưởng: route không còn chỉ làm request/response, mà can thiệp nhiều vào dữ liệu.
-- Gợi ý refactor: di chuyển tất cả thao tác DB vào service layer.
+- Ảnh hưởng: handler vẫn chứa logic truy cập dữ liệu.
+- Hướng xử lý: `StudentService`, `EnrollmentService`, repository layer.
 
 ### B. FaceService làm quá nhiều việc
 
-`backend/services/face_service.py` hiện xử lý:
-- detect
-- extract embedding
-- liveness
-- top-k
-- recognize
+Detect, embed, liveness, top-k, recognize trong một service.
 
-- Ảnh hưởng: high coupling giữa business logic và AI model.
-- Gợi ý: tách `Detector`, `Recognizer`, `Liveness`, `Search` vào module riêng.
+- Hướng xử lý: `RecognitionPipeline` + `BaseDetector` / `BaseRecognizer` / `LivenessEngine`.
 
-### C. Dynamic import backend.main
+### C. Dynamic import `backend.main`
 
-`backend/api/routes.py` dùng dynamic import `from backend.main import faiss_index` và `init_faiss_index()`.
+`common.py` (`init_faiss_index`, `faiss_index`) và `recognize_routes.py` (`faiss_index`) import từ `main`.
 
-- Ảnh hưởng: làm code khó kiểm thử, tạo dependency loop tiềm ẩn.
-- Gợi ý: quản lý FAISS index thông qua service hoặc object context, không import trực tiếp từ main.
+- Ảnh hưởng: khó test, dependency loop tiềm ẩn.
+- Hướng xử lý: `FaissService` singleton hoặc `app.state`, inject vào routes.
 
-### D. RegisterService phụ thuộc trực tiếp vào FaceService
+### D. RegisterService → FaceService
 
-Mặc dù đây là dependency hợp lý, nhưng hiện tại `FaceService` quá lớn nên `RegisterService` thừa nhận quá nhiều trách nhiệm.
+Dependency hợp lý nhưng `FaceService` quá lớn kéo theo coupling cho đăng ký.
 
-### E. face_engine tĩnh liên kết với DeepFace
+### E. DeepFace lock-in
 
-- `face_engine/facenet/*` ghép chặt với model DeepFace/Facenet512.
-- Gợi ý: dùng abstraction interface để thay model dễ dàng.
+`face_engine/facenet/*` gắn chặt RetinaFace / FaceNet512.
 
 ## Critical dependency hotspots
 
-- `backend/api/routes.py` (tập trung nhiều dependency)
-- `backend/services/face_service.py` (AI + business logic mix)
-- `backend/main.py` (startup + FAISS + warmup)
-- `backend/database/db.py` (database single source)
+| File | Lý do |
+|------|-------|
+| `backend/api/common.py` | Cache, FAISS bridge, thresholds, import `main` |
+| `backend/api/register_routes.py` | Đăng ký + DB + cache update |
+| `backend/api/recognize_routes.py` | Recognition flow + FAISS + attendance |
+| `backend/services/face_service.py` | AI + business logic mix |
+| `backend/main.py` | Startup orchestration + global FAISS |
 
-## Suggested dependency improvements
+## Suggested improvements
 
-### 1. Giảm coupling route → database
-
-- Đổi route gọi service thay vì gọi `db.py` trực tiếp.
-- Ví dụ: đưa `get_all_students`, `delete_student_and_embedding` vào `StudentService`.
-
-### 2. Tách FaceService thành modules
-
-- `DetectorService` hoặc `face_engine.detector.BaseDetector`
-- `RecognizerService` hoặc `face_engine.recognizer.BaseRecognizer`
-- `LivenessService`
-- `SearchService` hoặc `FAISSEmbeddingIndex`
-
-### 3. Tách FAISS khỏi main
-
-- Tạo service `FaissService` quản lý index, build, add, search.
-- Route/Service chỉ gọi FaissService.
-
-### 4. Mở rộng `core/config.py`
-
-- Thêm biến cấu hình `DETECTOR`, `RECOGNIZER`, `USE_FAISS`.
-
-### 5. Giảm dependency circular
-
-- Tránh import `backend.main` trong `routes.py`.
-- Nếu cần shared object, dùng singleton service hoặc app.state.
+1. **Route → service/repository** — loại bỏ `db.py` import từ `*_routes.py`.
+2. **Tách FaceService** — pipeline + detector/recognizer/liveness/search modules.
+3. **FaissService** — quản lý index tập trung, bỏ import `main` trong routes/common.
+4. **Config** — `DETECTOR`, `RECOGNIZER`, `USE_FAISS` trong `core/config.py`.
+5. **Shared state** — dùng `app.state` hoặc DI thay vì global trong `main`.
 
 ## Practical refactor opportunities
 
-| Problem | Existing dependency | Recommended fix |
-|---|---|---|
-| Route layer gọi DB trực tiếp | `backend/api/routes.py` → `backend/database/db.py` | Đổi sang `StudentService`, `EnrollmentService` |
-| Single FaceService | `backend/services/register_service.py` → `backend/services/face_service.py` | Tách detector/recognizer/search/liveness |
-| FAISS index được quản lý trong main | `backend/main.py` ↔ `backend/api/routes.py` | Đưa vào `backend/services/faiss_search.py` hoặc `FaissService` |
-| DeepFace lock-in | `backend/services/face_service.py` → `face_engine/facenet` | Thêm `BaseDetector`/`BaseRecognizer` interfaces |
+| Problem | Hiện tại | Đề xuất |
+|---------|----------|---------|
+| Route gọi DB trực tiếp | `*_routes.py` → `db.py` | `StudentService`, repositories |
+| FaceService monolith | `register_service` → `face_service` | `RecognitionPipeline` |
+| FAISS trong `main` | `main` ↔ `common` / `recognize_routes` | `FaissService` / `app.state` |
+| DeepFace lock-in | `face_service` → `face_engine/facenet` | `BaseDetector`, `BaseRecognizer` |
 
 ## Summary
 
-Hệ thống hiện tại hoạt động, nhưng tồn tại rõ ràng những dependency khiến refactor khó:
-- API layer quá phụ thuộc vào DB.
-- AI logic chưa tách đủ.
-- FAISS index được quản lý phân tán.
-- DeepFace được dùng trực tiếp ở nhiều điểm.
+Phase A đã giảm kích thước API monolith, nhưng coupling cốt lõi vẫn còn:
 
-Tài liệu `docs/dependency-analysis.md` này nên được dùng làm căn cứ đẩy nhanh phase 1-2 của roadmap: tách layer, giảm coupling và chuẩn hoá dependency.
+- DB access từ handlers.
+- FAISS global + import ngược từ `main`.
+- AI logic chưa tách khỏi `FaceService`.
+
+Ưu tiên tiếp theo (Phase 1–2): `RecognitionPipeline`, `FaissService`, repository layer — theo `05-system-design.md` và `roadmap.md`.

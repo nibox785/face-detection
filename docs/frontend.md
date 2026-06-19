@@ -1,130 +1,95 @@
 # Frontend Documentation
 
-## 1) Tong quan
+Tài liệu frontend runtime. API contract: `08-api-design.md`.
 
-Frontend dung React + Vite, chia thanh 3 tab chinh sau khi dang nhap:
+## Tổng quan
 
-- Dang ky
-- Diem danh
-- Danh sach
+Frontend dùng React + Vite, chia thành 3 tab chính sau khi đăng nhập:
 
-Tat ca request backend di qua `src/api/apiClient.js`.
+- Đăng ký
+- Điểm danh
+- Danh sách
 
-## 2) Cau truc chinh
+Mọi request backend đi qua `src/api/apiClient.js`.
+
+## Cấu trúc chính
 
 `frontend/src/`
 
-- `main.jsx`: mount app va boc `AuthProvider`.
-- `App.jsx`: tab navigation, load students/attendance, logout.
-- `context/AuthContext.jsx`: bootstrap token, verify token, logout on close.
-- `api/apiClient.js`: API_BASE, token helper, `apiFetch`, auth helper.
+- `main.jsx` — mount app và bọc `AuthProvider`.
+- `App.jsx` — tab navigation, load students/attendance, logout.
+- `context/AuthContext.jsx` — bootstrap token, verify token, logout on close.
+- `api/apiClient.js` — `API_BASE`, token helper, `apiFetch`, auth helper.
 - `components/features/`:
   - `LoginPanel.jsx`
   - `RegisterPanel.jsx`
   - `AttendancePanel.jsx`
   - `StudentsPanel.jsx`
 
-## 3) Auth flow
+## Auth flow
 
-1. App khoi dong, `AuthContext` doc token tu `sessionStorage`.
-2. Neu co token, goi `/api/auth/verify` de xac thuc.
-3. Neu token sai/het han, tu clear token va quay ve login.
-4. Dang xuat:
-   - goi `/api/logout`,
-   - clear token,
-   - co `bestEffortLogoutOnClose` khi dong tab.
+1. App khởi động, `AuthContext` đọc token từ `sessionStorage`.
+2. Nếu có token, gọi `/api/auth/verify` để xác thực.
+3. Nếu token sai/hết hạn, tự clear token và quay về login.
+4. Đăng xuất: gọi `/api/logout`, clear token, `bestEffortLogoutOnClose` khi đóng tab.
 
-Luu y: token dang la session-only (khong dung localStorage de auto-login lai sau khi dong tab).
+Token là session-only (không dùng `localStorage` để auto-login sau khi đóng tab).
 
-## 4) RegisterPanel hien tai
+## RegisterPanel
 
-`RegisterPanel.jsx` da doi sang luong burst capture:
+Luồng burst capture:
 
-- Muc tieu thu 10 frame (`TARGET_FRAMES=10`).
-- Co preview check mot so frame bang `/api/face/check`.
-- Gui tat ca frame qua `/api/dataset/register-multiple`.
-- Ho tro MSSV, reset state, dong camera sau khi dang ky thanh cong.
+- Mục tiêu thu 10 frame (`TARGET_FRAMES=10`).
+- Preview check một số frame qua `/api/face/check`.
+- Gửi tất cả frame qua `/api/dataset/register-multiple`.
+- Hỗ trợ MSSV, reset state, đóng camera sau đăng ký thành công.
 
-## 5) AttendancePanel hien tai
+## AttendancePanel
 
-`AttendancePanel.jsx` thuc hien:
-
-- Overlay bbox smooth bang tracking + prediction ngan (20-30 FPS draw loop).
-- Recognize realtime qua WebSocket (Mode B): FE gui frame, backend detect + tracking va tra `track_id + bbox + result`.
-- Telemetry realtime: FPS, API calls/phut, latency gan nhat, latency trung binh.
+- Overlay bbox smooth (tracking + prediction, 20–30 FPS draw loop).
+- Recognize realtime qua WebSocket Mode B: FE gửi frame, backend detect + tracking, trả `track_id + bbox + result`.
+- Telemetry: FPS, API calls/phút, latency gần nhất/trung bình.
 - Decision stats: `AUTO_MARK`, `MANUAL_REVIEW`, `REJECT`.
-- Hien top-3 candidates va score bar.
-- Import danh sach lop tu Excel, export ket qua diem danh ra Excel.
-- Export du lieu session:
-  - JSON (`session_metrics_*.json`)
-  - Excel telemetry.
+- Top-3 candidates và score bar.
+- Import danh sách lớp từ Excel, export kết quả điểm danh ra Excel.
+- Export session: JSON (`session_metrics_*.json`), Excel telemetry.
 
-## 6) StudentsPanel hien tai
+## StudentsPanel
 
-- Hien danh sach sinh vien + MSSV.
-- Hien lich su diem danh (20 ban ghi moi nhat tren UI).
-- Ho tro sua ten va xoa sinh vien.
-- Co refresh du lieu theo nhu cau.
+- Danh sách sinh viên + MSSV.
+- Lịch sử điểm danh (20 bản ghi mới nhất trên UI).
+- Sửa tên và xóa sinh viên.
+- Refresh dữ liệu theo nhu cầu.
 
-## 7) State Management
+## State management
 
-## Global State
+**Global** — `AuthContext`: access token, current user, authentication status.
 
-AuthContext
+**Local** — từng component: forms, modal, recognition results.
 
-Stores:
+## Luồng giao tiếp
 
-- Access token
-- Current user
-- Authentication status
+```
+React Component → apiClient → FastAPI → JSON Response → UI Update
+```
 
----
+Realtime:
 
-## Local State
+```
+Camera → Frontend Capture → WebSocket → Backend Recognition → UI Update
+```
 
-Components manage:
-
-- Forms
-- Modal state
-- Recognition results
-
-## 8) API Communication
-
-React Component
-↓
-apiClient
-↓
-FastAPI Endpoint
-↓
-JSON Response
-↓
-UI Update
-
-## 9) Realtime Flow
-
-Camera
-↓
-Frontend Capture
-↓
-WebSocket
-↓
-Backend Recognition
-↓
-Recognition Result
-↓
-UI Update
-
-## 10) API client
+## API client
 
 Trong `apiClient.js`:
 
 - `API_BASE = http://127.0.0.1:8000/api`
-- `authHeaders()` tu dong chen Bearer token.
-- `apiFetch()` tu dong xu ly 401 (clear token + reload).
-- Khong set `Content-Type` thu cong khi gui `FormData`.
-- WebSocket URL duoc build tu server origin (khong bao gom `/api`) vi WS endpoint nam o root: `/ws/...`.
+- `authHeaders()` tự động chèn Bearer token.
+- `apiFetch()` xử lý 401 (clear token + reload).
+- Không set `Content-Type` thủ công khi gửi `FormData`.
+- WebSocket: `getWsOrigin()` → `ws://<host>:<port>/api`; endpoint đầy đủ `/api/ws/...` (xem `08-api-design.md`).
 
-## 11) Luu y dong bo frontend-backend
+## Đồng bộ frontend–backend
 
-- Payload update student can duoc giu dong bo voi contract backend (`PUT /students/{student_id}`).
-- Neu thay doi contract API, can cap nhat `apiClient` va panel lien quan cung luc.
+- Payload update student phải khớp contract (`PUT /api/students/{student_id}`).
+- Khi đổi contract API, cập nhật `apiClient` và panel liên quan cùng lúc.
